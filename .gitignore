@@ -1,0 +1,50 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Local runtime artifacts
+*.log
+logs/
+tmp/
+cache/
+.cache/
+
+# Data artifacts
+data/raw/**
+data/processed/**
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Large model/vector artifacts
+*.sqlite
+*.db
+*.parquet
+*.pkl
+*.npy
+*.npz
+*.faiss
+*.index
+*.onnx
+*.bin
+
