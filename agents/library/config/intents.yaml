@@ -1,0 +1,111 @@
+intents:
+  BOOK_SEARCH:
+    priority: 40
+    minScore: 1.0
+    keywords:
+      - 검색
+      - 찾아
+      - 찾고
+      - 도서
+      - 책
+      - 저자
+      - 작가
+      - 출판사
+      - 청구기호
+      - 자료
+    negativeKeywords:
+      - 도서관
+      - 학술정보관
+    examples:
+      - 파이썬 책 찾아줘
+      - 김코딩 저자 도서 검색
+      - 한빛미디어 출판사 자료 찾아줘
+
+  BOOK_LOCATION:
+    priority: 50
+    minScore: 1.2
+    keywords:
+      - 위치
+      - 어디
+      - 소장
+      - 서가
+      - 자료실
+      - 층
+      - 청구기호
+    negativeKeywords:
+      - 운영 시간
+      - 휴관
+    examples:
+      - 파이썬 자료구조 어디 있어?
+      - 청구기호 005.74 위치 알려줘
+      - 제1자료실 책 위치
+
+  LIBRARY_GUIDE:
+    priority: 45
+    minScore: 1.0
+    keywords:
+      - 학술정보관
+      - 도서관
+      - 운영
+      - 시간
+      - 이용
+      - 휴관
+      - 열람실
+      - 좌석
+      - 예약
+      - 반납
+      - 대출
+      - 연장
+      - 회원
+      - 문의
+      - 전자책
+      - db
+      - 자료 이용
+    negativeKeywords: []
+    examples:
+      - 도서관 운영 시간 알려줘
+      - 학술정보관 좌석 예약 방법
+      - 전자책은 어떻게 이용해?
+
+  BOOK_RECOMMENDATION:
+    priority: 55
+    minScore: 1.0
+    keywords:
+      - 추천
+      - 비슷한
+      - 관련
+      - 읽을만
+      - 읽을 만
+    negativeKeywords: []
+    examples:
+      - 데이터베이스 관련 책 추천해줘
+      - 파이썬 읽을 만한 책 있어?
+
+  LIBRARY_GENERAL:
+    priority: 0
+    minScore: 0.0
+    keywords: []
+    negativeKeywords: []
+    examples:
+      - 궁금한 게 있어
+
+keywordCleanup:
+  - 도서 검색
+  - 책 검색
+  - 도서 찾아줘
+  - 책 찾아줘
+  - 찾아줘
+  - 검색해줘
+  - 검색
+  - 어디 있어
+  - 어디있어
+  - 위치
+  - 소장 위치
+  - 추천해줘
+  - 추천
+  - 관련 도서
+  - 학술정보관
+  - 도서관
+  - 안내
+  - 알려줘
+

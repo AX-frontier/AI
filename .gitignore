@@ -11,6 +11,7 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
+*.egg-info/
 
 # Node
 node_modules/
@@ -47,4 +48,3 @@ data/processed/**
 *.index
 *.onnx
 *.bin
-
