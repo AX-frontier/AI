@@ -14,6 +14,8 @@ LibraryIntent = Literal[
 
 
 class LibraryChatRequest(BaseModel):
+    """Spring이 Library Agent로 메시지를 라우팅할 때 보내는 요청 본문."""
+
     queryUid: str
     traceId: str
     conversationUid: str
@@ -21,6 +23,8 @@ class LibraryChatRequest(BaseModel):
 
 
 class MatchedBook(BaseModel):
+    """Spring 호환 camelCase JSON으로 노출되는 도서 결과 필드."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -38,6 +42,8 @@ class MatchedBook(BaseModel):
 
 
 class LibrarySource(BaseModel):
+    """Library 답변에 사용된 안내 문서의 출처 메타데이터."""
+
     id: int
     title: str
     sourceUrl: str | None = None
@@ -45,6 +51,8 @@ class LibrarySource(BaseModel):
 
 
 class LibraryChatResponse(BaseModel):
+    """Spring OrchestrateResponse와 호환되는 Library Agent 응답 payload."""
+
     targetAgent: Literal["LIBRARY"] = "LIBRARY"
     intent: LibraryIntent
     answer: str
@@ -55,4 +63,3 @@ class LibraryChatResponse(BaseModel):
     searchKeyword: str | None = None
     resultCount: int = 0
     matchedBooks: list[MatchedBook] = Field(default_factory=list)
-

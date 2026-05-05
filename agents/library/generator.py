@@ -12,6 +12,7 @@ def build_book_response(
     result: BookSearchResult,
     confidence: float,
 ) -> LibraryChatResponse:
+    """도서 검색 결과를 Spring 호환 Library 응답으로 변환한다."""
     matched_books = [_book_to_response(book) for book in result.books]
     result_count = len(matched_books)
 
@@ -51,6 +52,7 @@ def build_guide_response(
     context: GuideContext,
     confidence: float,
 ) -> LibraryChatResponse:
+    """검색된 안내 컨텍스트와 출처 정보를 바탕으로 안내 QA 응답을 만든다."""
     if not context.docs:
         return build_fallback_response(intent, context.keyword, "관련 학술정보관 안내 문서를 찾지 못했습니다.")
 
@@ -79,6 +81,7 @@ def build_guide_response(
 
 
 def build_fallback_response(intent: LibraryIntent, keyword: str, reason: str) -> LibraryChatResponse:
+    """검색으로 답변하지 못했을 때 일관된 fallback 응답을 반환한다."""
     return LibraryChatResponse(
         intent=intent,
         answer=f"{reason} 다른 검색어로 다시 질문해 주세요.",
@@ -93,6 +96,7 @@ def build_fallback_response(intent: LibraryIntent, keyword: str, reason: str) ->
 
 
 def _book_to_response(book: BookRecord) -> MatchedBook:
+    """DB의 snake_case 도서 필드를 Spring 응답용 camelCase 필드로 매핑한다."""
     return MatchedBook(
         id=book.id,
         bibNo=book.bib_no,
@@ -110,8 +114,8 @@ def _book_to_response(book: BookRecord) -> MatchedBook:
 
 
 def _summarize_content(content: str, max_length: int = 280) -> str:
+    """LLM 답변 생성기가 붙기 전까지 안내 답변을 짧게 요약한다."""
     compact = re.sub(r"\s+", " ", content).strip()
     if len(compact) <= max_length:
         return compact
     return compact[: max_length - 1].rstrip() + "..."
-

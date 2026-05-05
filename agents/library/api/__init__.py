@@ -1,2 +1,1 @@
-"""Library Agent API package."""
-
+"""Library Agent API 패키지."""

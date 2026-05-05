@@ -15,12 +15,14 @@ def run_library_agent(
     request: LibraryChatRequest,
     repository: LibraryRepository | None = None,
 ) -> LibraryChatResponse:
+    """Spring 요청을 받아 Library Agent 전체 파이프라인을 실행한다."""
     repo = repository or get_library_repository()
     book_retriever = BookRetriever(repo)
     guide_retriever = GuideRetriever(repo)
 
     message = request.message.strip()
     provisional_keyword = extract_search_keyword(message)
+    # 실제 검색 결과를 intent 판단에 반영하기 위해 두 저장소를 먼저 가볍게 조회한다.
     evidence = collect_retrieval_evidence(
         provisional_keyword,
         book_retriever=book_retriever,
@@ -44,4 +46,3 @@ def run_library_agent(
         else "관련 안내 문서를 찾지 못했습니다."
     )
     return build_fallback_response(classification.intent, keyword, fallback_reason)
-

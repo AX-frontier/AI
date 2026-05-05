@@ -14,5 +14,5 @@ def chat(
     request: LibraryChatRequest,
     repository: LibraryRepository = Depends(get_library_repository),
 ) -> LibraryChatResponse:
+    """Spring에서 호출하는 Library Agent 채팅 endpoint."""
     return run_library_agent(request, repository=repository)
-

@@ -18,6 +18,8 @@ LOW_CONFIDENCE_THRESHOLD = 0.55
 
 @dataclass(frozen=True)
 class IntentRule:
+    """YAML에 정의된 intent별 점수 계산 규칙."""
+
     intent: LibraryIntent
     priority: int
     min_score: float
@@ -28,12 +30,16 @@ class IntentRule:
 
 @dataclass(frozen=True)
 class IntentConfig:
+    """로드된 intent 사전과 검색어에서 제거할 문구 목록."""
+
     rules: tuple[IntentRule, ...]
     keyword_cleanup: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class RetrievalEvidence:
+    """intent 판단을 보강하기 위한 가벼운 DB 검색 결과 수."""
+
     book_hits: int = 0
     guide_hits: int = 0
     book_keyword: str | None = None
@@ -42,6 +48,8 @@ class RetrievalEvidence:
 
 @dataclass(frozen=True)
 class IntentScore:
+    """최종 intent를 고르기 전 후보 intent 하나의 점수."""
+
     intent: LibraryIntent
     raw_score: float
     confidence: float
@@ -51,6 +59,8 @@ class IntentScore:
 
 @dataclass(frozen=True)
 class IntentClassification:
+    """Library Agent 파이프라인에서 사용하는 최종 라우팅 결과."""
+
     intent: LibraryIntent
     confidence: float
     reason: str
@@ -60,6 +70,8 @@ class IntentClassification:
 
 
 class LLMIntentClassifier(Protocol):
+    """애매한 질문에서만 사용할 수 있는 선택형 LLM 분류기 인터페이스."""
+
     def classify(
         self,
         message: str,
@@ -70,6 +82,8 @@ class LLMIntentClassifier(Protocol):
 
 
 class DisabledLLMIntentClassifier:
+    """로컬/개발 환경에서 API 키 없이 동작하도록 하는 no-op LLM 분류기."""
+
     def classify(
         self,
         message: str,
@@ -81,6 +95,7 @@ class DisabledLLMIntentClassifier:
 
 @lru_cache(maxsize=1)
 def load_intent_config(config_path: str | None = None) -> IntentConfig:
+    """YAML intent 규칙을 한 번 로드하고 요청마다 재사용한다."""
     path = Path(config_path) if config_path else CONFIG_PATH
     with path.open("r", encoding="utf-8") as file:
         payload = yaml.safe_load(file) or {}
@@ -110,6 +125,7 @@ def classify_intent(
     llm_classifier: LLMIntentClassifier | None = None,
     config: IntentConfig | None = None,
 ) -> IntentClassification:
+    """YAML 점수, 검색 evidence, 선택형 LLM 순서로 최적 intent를 고른다."""
     intent_config = config or load_intent_config()
     retrieval_evidence = evidence or RetrievalEvidence()
     scores = score_intents(message, retrieval_evidence, intent_config)
@@ -142,6 +158,7 @@ def score_intents(
     evidence: RetrievalEvidence,
     config: IntentConfig | None = None,
 ) -> list[IntentScore]:
+    """설정된 모든 intent에 점수를 매기고 강한 후보부터 반환한다."""
     intent_config = config or load_intent_config()
     normalized = message.lower()
     scores = [_score_rule(rule, normalized, evidence) for rule in intent_config.rules]
@@ -154,6 +171,7 @@ def extract_search_keyword(
     intent: LibraryIntent | None = None,
     config: IntentConfig | None = None,
 ) -> str:
+    """저장소 검색에 필요한 핵심 키워드만 남기기 위해 명령형 문구를 제거한다."""
     intent_config = config or load_intent_config()
     cleaned = message.strip()
     cleaned = re.sub(r"[?？!！.。]+$", "", cleaned).strip()
@@ -166,6 +184,7 @@ def extract_search_keyword(
 
 
 def _score_rule(rule: IntentRule, normalized: str, evidence: RetrievalEvidence) -> IntentScore:
+    """현재 메시지에 대해 intent 규칙 하나를 숫자 점수로 변환한다."""
     matched = tuple(keyword for keyword in rule.keywords if keyword.lower() in normalized)
     negative = tuple(keyword for keyword in rule.negative_keywords if keyword.lower() in normalized)
     raw_score = float(len(matched)) - (1.2 * len(negative))
@@ -196,6 +215,7 @@ def _score_rule(rule: IntentRule, normalized: str, evidence: RetrievalEvidence) 
 
 
 def _evidence_bonus(intent: LibraryIntent, evidence: RetrievalEvidence) -> float:
+    """해당 저장소에 실제 검색 결과가 있으면 관련 intent 점수를 올린다."""
     if intent in ("BOOK_SEARCH", "BOOK_LOCATION", "BOOK_RECOMMENDATION") and evidence.book_hits:
         return 1.4
     if intent in ("LIBRARY_GUIDE", "LIBRARY_GENERAL") and evidence.guide_hits:
@@ -204,6 +224,7 @@ def _evidence_bonus(intent: LibraryIntent, evidence: RetrievalEvidence) -> float
 
 
 def _is_ambiguous(best: IntentScore, second: IntentScore | None) -> bool:
+    """확신도가 낮거나 점수 차이가 작아 LLM 보조가 필요한 상황을 감지한다."""
     if best.intent == "LIBRARY_GENERAL":
         return best.confidence < LOW_CONFIDENCE_THRESHOLD
     if best.confidence < LOW_CONFIDENCE_THRESHOLD:
@@ -214,6 +235,7 @@ def _is_ambiguous(best: IntentScore, second: IntentScore | None) -> bool:
 
 
 def _build_reason(best: IntentScore, evidence: RetrievalEvidence, ambiguous: bool) -> str:
+    """로그나 오케스트레이터 메타데이터에 쓸 짧은 판단 근거를 만든다."""
     parts = []
     if best.matched_keywords:
         parts.append(f"matched keywords: {', '.join(best.matched_keywords)}")
@@ -227,7 +249,7 @@ def _build_reason(best: IntentScore, evidence: RetrievalEvidence, ambiguous: boo
 
 
 def _default_llm_classifier() -> LLMIntentClassifier:
+    """설정된 LLM 분류기를 반환한다. 현재는 의도적으로 비활성화되어 있다."""
     if os.getenv("LIBRARY_LLM_CLASSIFIER_ENABLED", "false").lower() != "true":
         return DisabledLLMIntentClassifier()
     return DisabledLLMIntentClassifier()
-
