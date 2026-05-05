@@ -21,7 +21,7 @@ test = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["agents/library/tests"]
+testpaths = ["agents/library/tests", "agents/main_agent/tests"]
 
 [tool.setuptools.packages.find]
 include = ["agents*", "shared*", "ingestion*"]
