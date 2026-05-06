@@ -1,0 +1,21 @@
+from __future__ import annotations
+
+from agents.main_agent.api.schemas import MainChatRequest, MainChatResponse
+from agents.main_agent.embedding import DeterministicEmbeddingProvider, EmbeddingProvider
+from agents.main_agent.generator import build_main_response
+from agents.main_agent.repository import MainChunkRepository, get_main_chunk_repository
+from agents.main_agent.retrieval import MainRetriever
+
+
+def run_main_agent(
+    request: MainChatRequest,
+    repository: MainChunkRepository | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
+) -> MainChatResponse:
+    """Spring 요청을 받아 Main Agent RAG 검색/응답 파이프라인을 실행한다."""
+    repo = repository or get_main_chunk_repository()
+    embedder = embedding_provider or DeterministicEmbeddingProvider()
+    retriever = MainRetriever(repo, embedder)
+
+    result = retriever.retrieve(request.message.strip())
+    return build_main_response(result)
