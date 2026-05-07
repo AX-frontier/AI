@@ -24,6 +24,7 @@ def main() -> None:
     chunks = load_markdown_chunks(
         markdown_root=markdown_root,
         metadata_root=metadata_root,
+        source_prefix=args.source_prefix,
         max_chars=args.max_chars,
         overlap_chars=args.overlap_chars,
     )
@@ -72,6 +73,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-chars", type=int, default=1200)
     parser.add_argument("--overlap-chars", type=int, default=150)
     parser.add_argument("--embedding-dimensions", type=int, default=1536)
+    parser.add_argument("--source-prefix", default="notice")
     return parser.parse_args()
 
 
@@ -89,4 +91,3 @@ def _sample_chunk(chunks: list) -> dict | None:
 
 if __name__ == "__main__":
     main()
-

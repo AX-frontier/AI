@@ -72,3 +72,24 @@ python -m ingestion.jobs.load_hansung_notice_vectors \
 현재 임베딩은 실제 모델 연동 전 로컬 검증용 `DeterministicEmbeddingProvider(1536)`를 사용합니다.
 실제 서비스 임베딩 모델이 정해지면 provider만 교체하고, `data/schemas/main_agent.sql`의
 `vector(1536)` 차원도 모델 차원에 맞춥니다.
+
+## HSEL Library Crawler
+
+한성대학교 학술정보관의 공개 안내 페이지와 최근 6개월 공지사항을 Markdown/JSON으로 저장합니다.
+로그인/SSO/개인 My Library/검색 결과 페이지는 제외합니다.
+
+```bash
+python -m ingestion.crawlers.hsel_library.main \
+  --since-date 2025-11-07 \
+  --max-notice-pages 30 \
+  --output-dir data/raw/hsel-library
+```
+
+pgvector에 적재할 때는 기존 공지 chunk와 구분되도록 `library` prefix를 사용합니다.
+
+```bash
+python -m ingestion.jobs.load_hansung_notice_vectors \
+  --input-dir data/raw/hsel-library \
+  --source-prefix library \
+  --init-schema
+```
