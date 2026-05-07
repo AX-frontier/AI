@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from uuid import UUID
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,9 +17,9 @@ LibraryIntent = Literal[
 class LibraryChatRequest(BaseModel):
     """Spring이 Library Agent로 메시지를 라우팅할 때 보내는 요청 본문."""
 
-    queryUid: str
-    traceId: str
-    conversationUid: str
+    queryUid: UUID
+    traceId: UUID
+    conversationUid: UUID
     message: str = Field(min_length=1)
 
 

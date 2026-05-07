@@ -41,9 +41,9 @@ class MockLibraryRepository:
 
 def make_request(message: str) -> LibraryChatRequest:
     return LibraryChatRequest(
-        queryUid="query-1",
-        traceId="trace-1",
-        conversationUid="conversation-1",
+        queryUid="11111111-1111-4111-8111-111111111111",
+        traceId="22222222-2222-4222-8222-222222222222",
+        conversationUid="33333333-3333-4333-8333-333333333333",
         message=message,
     )
 
