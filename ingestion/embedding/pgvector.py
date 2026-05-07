@@ -53,7 +53,7 @@ def upsert_chunks(
 
     with engine.begin() as connection:
         for chunk in chunks:
-            embedding = embedding_provider.embed_query(chunk.text)
+            embedding = embedding_provider.embed_document(chunk.text)
             connection.execute(
                 statement,
                 {
@@ -69,4 +69,3 @@ def upsert_chunks(
 
 def _vector_literal(values: list[float]) -> str:
     return "[" + ",".join(str(value) for value in values) + "]"
-
