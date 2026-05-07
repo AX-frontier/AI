@@ -1,0 +1,2 @@
+"""Hansung University notice crawler."""
+

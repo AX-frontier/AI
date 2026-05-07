@@ -1,0 +1,82 @@
+{
+  "source_id": "hansung_notice",
+  "source_name": "한성대학교 공지사항",
+  "board_no": "2127",
+  "base_url": "https://www.hansung.ac.kr/hansung/6172/subview.do",
+  "detail_url_pattern": "https://www.hansung.ac.kr/bbs/hansung/2127/{notice_id}/artclView.do",
+  "categories": [
+    {
+      "key": "all",
+      "name": "전체공지",
+      "find_ccl_seq": null,
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do"
+    },
+    {
+      "key": "stay_study",
+      "name": "Stay&Study in School 장학사업",
+      "find_ccl_seq": "333",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzMzMlMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "hansung",
+      "name": "한성공지",
+      "find_ccl_seq": "334",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzMzQlMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "academic",
+      "name": "학사공지",
+      "find_ccl_seq": "335",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzMzUlMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "extracurricular",
+      "name": "비교과공지",
+      "find_ccl_seq": "336",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzMzYlMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "field_training",
+      "name": "현장실습공지",
+      "find_ccl_seq": "337",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzMzclMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "career",
+      "name": "진로공지",
+      "find_ccl_seq": "338",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzMzglMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "employment",
+      "name": "취업공지",
+      "find_ccl_seq": "339",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzMzklMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "scholarship",
+      "name": "장학공지",
+      "find_ccl_seq": "346",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzNDYlMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "startup",
+      "name": "창업공지",
+      "find_ccl_seq": "355",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzNTUlMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "international",
+      "name": "국제공지",
+      "find_ccl_seq": "360",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzNjAlMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    },
+    {
+      "key": "covid19",
+      "name": "코로나19공지",
+      "find_ccl_seq": "361",
+      "url": "https://www.hansung.ac.kr/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkZhcnRjbExpc3QuZG8lM0ZmaW5kQ2xTZXElM0QzNjElMjZmaW5kT3Bud3JkJTNEJTI2ZmluZFR5cGUlM0RzaiUyNmZpbmRXb3JkJTNEJTI2"
+    }
+  ]
+}
+
