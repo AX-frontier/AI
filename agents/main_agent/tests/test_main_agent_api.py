@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from agents.main_agent.api.router import get_main_embedding_provider, get_main_llm_client
+from agents.main_agent.embedding import DeterministicEmbeddingProvider
+from agents.main_agent.llm.mock import MockLLMClient
 from agents.main_agent.models import MainChunkRecord
 from agents.main_agent.repository import get_main_chunk_repository
 from app import app
@@ -33,6 +36,10 @@ class ApiMockChunkRepository:
 
 def test_main_chat_endpoint_returns_spring_compatible_payload() -> None:
     app.dependency_overrides[get_main_chunk_repository] = lambda: ApiMockChunkRepository()
+    app.dependency_overrides[get_main_embedding_provider] = lambda: DeterministicEmbeddingProvider()
+    app.dependency_overrides[get_main_llm_client] = lambda: MockLLMClient(
+        "수강신청 정정 기간 답변입니다."
+    )
     client = TestClient(app)
 
     response = client.post(

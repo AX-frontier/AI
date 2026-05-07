@@ -14,6 +14,8 @@ dependencies = [
   "psycopg[binary]>=3.1,<4.0",
   "python-dotenv>=1.0,<2.0",
   "pyyaml>=6.0,<7.0",
+  "google-genai>=1.0,<2.0",
+  "sentence-transformers>=3.0,<4.0",
 ]
 
 [project.optional-dependencies]
@@ -27,7 +29,10 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["agents/library/tests", "agents/main_agent/tests"]
+testpaths = ["agents/library/tests", "agents/main_agent/tests", "agents/orchestrator/tests"]
+markers = [
+  "integration: tests that may download local models or call external services",
+]
 
 [tool.setuptools.packages.find]
 include = ["agents*", "shared*", "ingestion*"]

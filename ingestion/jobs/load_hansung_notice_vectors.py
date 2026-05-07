@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from agents.library.db import create_library_engine
-from agents.main_agent.embedding import DeterministicEmbeddingProvider
+from agents.main_agent.embedding import get_embedding_provider
 from ingestion.chunking.markdown import load_markdown_chunks
 from ingestion.embedding.pgvector import init_main_agent_schema, upsert_chunks
 
@@ -46,18 +46,20 @@ def main() -> None:
     if args.init_schema:
         init_main_agent_schema(engine, args.schema_path)
 
+    embedding_provider = get_embedding_provider()
     inserted_count = upsert_chunks(
         engine=engine,
         chunks=chunks,
-        embedding_provider=DeterministicEmbeddingProvider(dimensions=args.embedding_dimensions),
+        embedding_provider=embedding_provider,
     )
     print(
         json.dumps(
-            {
-                "input_dir": str(input_dir),
-                "inserted_count": inserted_count,
-                "embedding_dimensions": args.embedding_dimensions,
-            },
+                {
+                    "input_dir": str(input_dir),
+                    "inserted_count": inserted_count,
+                    "embedding_provider": embedding_provider.__class__.__name__,
+                    "embedding_dimensions": embedding_provider.dimensions,
+                },
             ensure_ascii=False,
             indent=2,
         )
@@ -72,7 +74,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-chars", type=int, default=1200)
     parser.add_argument("--overlap-chars", type=int, default=150)
-    parser.add_argument("--embedding-dimensions", type=int, default=1536)
+    parser.add_argument(
+        "--embedding-dimensions",
+        type=int,
+        default=384,
+        help="Deprecated. Embedding dimensions are now selected by the configured provider.",
+    )
     parser.add_argument("--source-prefix", default="notice")
     return parser.parse_args()
 
