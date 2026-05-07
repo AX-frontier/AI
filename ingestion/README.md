@@ -69,9 +69,10 @@ python -m ingestion.jobs.load_hansung_notice_vectors \
   --init-schema
 ```
 
-현재 임베딩은 실제 모델 연동 전 로컬 검증용 `DeterministicEmbeddingProvider(1536)`를 사용합니다.
-실제 서비스 임베딩 모델이 정해지면 provider만 교체하고, `data/schemas/main_agent.sql`의
-`vector(1536)` 차원도 모델 차원에 맞춥니다.
+현재 기본 임베딩은 `.env`의 `MAIN_AGENT_EMBEDDING_PROVIDER=e5` 설정을 따라
+`intfloat/multilingual-e5-small`을 사용합니다. 이 모델의 출력 차원은 384이므로
+`data/schemas/main_agent.sql`도 `vector(384)` 기준입니다. 임베딩 모델을 바꾸면
+`MAIN_AGENT_EMBEDDING_DIMENSIONS`와 schema의 vector 차원을 함께 맞춰야 합니다.
 
 ## HSEL Library Crawler
 
