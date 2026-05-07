@@ -37,9 +37,9 @@ def test_library_chat_endpoint_returns_contract_payload() -> None:
     response = client.post(
         "/library/chat",
         json={
-            "queryUid": "query-1",
-            "traceId": "trace-1",
-            "conversationUid": "conversation-1",
+            "queryUid": "11111111-1111-4111-8111-111111111111",
+            "traceId": "22222222-2222-4222-8222-222222222222",
+            "conversationUid": "33333333-3333-4333-8333-333333333333",
             "message": "파이썬 도서 검색",
         },
     )
@@ -54,3 +54,21 @@ def test_library_chat_endpoint_returns_contract_payload() -> None:
     assert payload["resultCount"] == 1
     assert payload["matchedBooks"][0]["bibNo"] == "BIB-001"
 
+
+def test_library_chat_endpoint_rejects_non_uuid_identifiers() -> None:
+    app.dependency_overrides[get_library_repository] = lambda: ApiMockRepository()
+    client = TestClient(app)
+
+    response = client.post(
+        "/library/chat",
+        json={
+            "queryUid": "query-1",
+            "traceId": "tr-20260507-0001",
+            "conversationUid": "conv-20260507-0001",
+            "message": "파이썬 도서 검색",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
