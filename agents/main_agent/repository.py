@@ -23,6 +23,14 @@ class MainChunkRepository(Protocol):
     ) -> list[MainChunkRecord]:
         ...
 
+    def search_keyword_chunks(
+        self,
+        terms: list[str],
+        *,
+        limit: int = 10,
+    ) -> list[MainChunkRecord]:
+        ...
+
 
 class PostgresMainChunkRepository:
     """pgvector 기반 학교 정보 chunk repository."""
@@ -73,6 +81,47 @@ class PostgresMainChunkRepository:
                 for row in rows
             ]
 
+    def search_keyword_chunks(
+        self,
+        terms: list[str],
+        *,
+        limit: int = 10,
+    ) -> list[MainChunkRecord]:
+        strong_terms = [term for term in terms if len(term) >= 2 and term not in {"신청", "기간", "안내"}]
+        if not strong_terms:
+            return []
+        patterns = [f"%{term}%" for term in strong_terms]
+        query = text(
+            """
+            SELECT
+              chunk_id,
+              document_id,
+              text,
+              metadata,
+              0.5
+                + CASE WHEN metadata->>'title' ILIKE ANY(:patterns) THEN 0.18 ELSE 0 END
+                + CASE WHEN text ILIKE ANY(:patterns) THEN 0.08 ELSE 0 END
+                AS score
+            FROM main_agent.document_chunks
+            WHERE metadata->>'title' ILIKE ANY(:patterns)
+               OR text ILIKE ANY(:patterns)
+            ORDER BY score DESC, updated_at DESC
+            LIMIT :limit
+            """
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(query, {"patterns": patterns, "limit": limit}).mappings()
+            return [
+                MainChunkRecord(
+                    chunk_id=str(row["chunk_id"]),
+                    document_id=str(row["document_id"]),
+                    text=str(row["text"]),
+                    score=float(row["score"]),
+                    metadata=_normalize_metadata(row["metadata"]),
+                )
+                for row in rows
+            ]
+
 
 class MockMainChunkRepository:
     """DB 적재 전 로컬 수동 테스트에 쓰는 샘플 chunk repository."""
@@ -104,6 +153,14 @@ class MockMainChunkRepository:
                 },
             )
         ][:limit]
+
+    def search_keyword_chunks(
+        self,
+        terms: list[str],
+        *,
+        limit: int = 10,
+    ) -> list[MainChunkRecord]:
+        return []
 
 
 def _normalize_metadata(value: object) -> dict:
