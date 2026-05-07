@@ -29,7 +29,7 @@ def load_markdown_chunks(
         category = markdown_path.parent.name
         metadata_path = metadata_root / category / f"{markdown_path.name}.metadata.json"
         record_path = metadata_root / category / f"{markdown_path.stem}.json"
-        metadata = _load_notice_metadata(record_path)
+        metadata = _load_record_metadata(record_path)
         metadata.update(_load_metadata(metadata_path))
         document_id = str(
             metadata.get("notice_id")
@@ -45,7 +45,7 @@ def load_markdown_chunks(
         ):
             chunk_metadata = dict(metadata)
             chunk_metadata["chunk_index"] = chunk_index
-            chunk_metadata.pop("document_id", None)
+            _drop_duplicate_identifier_metadata(chunk_metadata, document_id)
             chunks.append(
                 ChunkDocument(
                     chunk_id=f"{source_prefix}-{document_id}-{chunk_index:04d}",
@@ -107,7 +107,7 @@ def _load_metadata(path: Path) -> dict[str, Any]:
     return attrs
 
 
-def _load_notice_metadata(path: Path) -> dict[str, Any]:
+def _load_record_metadata(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
 
@@ -125,9 +125,8 @@ def _load_notice_metadata(path: Path) -> dict[str, Any]:
     ]
 
     metadata: dict[str, Any] = {
-        "doc_type": "notice",
-        "source": record.get("source") or "hansung_notice",
-        "notice_id": _to_int(record.get("notice_id")) or record.get("notice_id") or path.stem,
+        "source": record.get("source"),
+        "doc_type": record.get("doc_type"),
         "title": record.get("title"),
         "category": record.get("category"),
         "source_category_key": record.get("source_category_key"),
@@ -145,6 +144,11 @@ def _load_notice_metadata(path: Path) -> dict[str, Any]:
         "attachments_hash": record.get("attachments_hash"),
         "content_hash": record.get("content_hash"),
     }
+    record_document_id = record.get("notice_id") or record.get("document_id") or path.stem
+    if record.get("notice_id"):
+        metadata["notice_id"] = _to_int(record.get("notice_id")) or record.get("notice_id")
+    else:
+        metadata["source_document_id"] = str(record_document_id)
     return {key: value for key, value in metadata.items() if value not in (None, "", [])}
 
 
@@ -180,3 +184,10 @@ def _to_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _drop_duplicate_identifier_metadata(metadata: dict[str, Any], document_id: str) -> None:
+    for key in ("document_id", "source_document_id", "notice_id"):
+        value = metadata.get(key)
+        if value is not None and str(value) == document_id:
+            metadata.pop(key, None)
