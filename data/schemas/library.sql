@@ -1,5 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS library;
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS library.books (
   id BIGSERIAL PRIMARY KEY,
   excel_no INT,
@@ -31,3 +33,24 @@ CREATE TABLE IF NOT EXISTS library.guide_docs (
   content TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_guide_docs_source_url
+  ON library.guide_docs (source_url);
+
+CREATE TABLE IF NOT EXISTS library.guide_doc_chunks (
+  id BIGSERIAL PRIMARY KEY,
+  guide_doc_id BIGINT NOT NULL REFERENCES library.guide_docs(id) ON DELETE CASCADE,
+  chunk_index INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  embedding vector(384) NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_guide_doc_chunks_doc_chunk UNIQUE (guide_doc_id, chunk_index),
+  CONSTRAINT uq_guide_doc_chunks_content_hash UNIQUE (guide_doc_id, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_guide_doc_chunks_embedding
+  ON library.guide_doc_chunks
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
