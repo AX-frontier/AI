@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from agents.library.api.router import router as library_router
 from agents.main_agent.api.router import router as main_agent_router
 from agents.orchestrator.api.router import router as orchestrator_router
+from ingestion.api.router import router as ingestion_router
 
 load_dotenv()
 
@@ -16,6 +17,7 @@ app = FastAPI(title="AX-Prontier AI", version="0.1.0")
 app.include_router(library_router)
 app.include_router(main_agent_router)
 app.include_router(orchestrator_router)
+app.include_router(ingestion_router)
 
 
 @app.get("/health")

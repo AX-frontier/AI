@@ -73,6 +73,78 @@ python -m ingestion.jobs.load_hansung_notice_vectors \
 
 적재 결과는 `inserted_count`, `updated_count`, `skipped_count`, `deleted_count`로 나뉘어 출력됩니다.
 
+## Ingestion API
+
+Spring Scheduler나 관리자 API는 Python FastAPI의 ingestion endpoint를 호출해 크롤링과 pgvector 적재를
+background job으로 실행할 수 있습니다. `POST /ingestion/run`은 긴 작업을 직접 기다리지 않고
+`202 Accepted`와 `jobId`를 반환하며, Spring은 status endpoint를 polling합니다.
+
+```http
+POST /ingestion/run
+```
+
+요청 예시:
+
+```json
+{
+  "sources": ["hansung_notice", "hsel_library"],
+  "sinceDate": "2025-11-08",
+  "maxPages": 5,
+  "maxNoticePages": 30,
+  "initSchema": false
+}
+```
+
+실행 요청 응답:
+
+```json
+{
+  "jobId": "ingestion-20260508030000-abc12345",
+  "status": "ACCEPTED",
+  "statusUrl": "/ingestion/status/ingestion-20260508030000-abc12345"
+}
+```
+
+상태 조회:
+
+```http
+GET /ingestion/status/{jobId}
+```
+
+상태 조회 응답에는 source별 크롤링 결과와 vector 적재 결과가 함께 포함됩니다.
+
+```json
+{
+  "jobId": "ingestion-20260508030000-abc12345",
+  "status": "COMPLETED",
+  "startedAt": "2026-05-08T03:00:00+09:00",
+  "endedAt": "2026-05-08T03:03:00+09:00",
+  "results": [
+    {
+      "source": "hansung_notice",
+      "status": "COMPLETED",
+      "crawl": {
+        "savedCount": 1,
+        "updatedCount": 0,
+        "unchangedCount": 10,
+        "skipCount": 0,
+        "errorCount": 0,
+        "processedPages": 1
+      },
+      "vector": {
+        "insertedCount": 3,
+        "updatedCount": 0,
+        "skippedCount": 20,
+        "deletedCount": 0,
+        "processedCount": 23,
+        "embeddingProvider": "E5EmbeddingProvider",
+        "embeddingDimensions": 384
+      }
+    }
+  ]
+}
+```
+
 현재 기본 임베딩은 `.env`의 `MAIN_AGENT_EMBEDDING_PROVIDER=e5` 설정을 따라
 `intfloat/multilingual-e5-small`을 사용합니다. 이 모델의 출력 차원은 384이므로
 `data/schemas/main_agent.sql`도 `vector(384)` 기준입니다. 임베딩 모델을 바꾸면
