@@ -50,6 +50,8 @@ data/raw/hansung-notice/
 
 크롤링 산출물의 Markdown과 metadata JSON을 chunk로 바꾼 뒤, Spring BE Docker PostgreSQL의
 `main_agent.document_chunks` 테이블에 upsert합니다.
+원문 JSON의 `content_hash`가 기존 chunk metadata와 같으면 해당 문서는 임베딩을 다시 생성하지 않고
+건너뜁니다. `content_hash`가 바뀐 문서는 기존 chunk를 삭제한 뒤 새 chunk와 embedding을 저장합니다.
 
 DB 없이 chunk 변환만 확인:
 
@@ -68,6 +70,8 @@ python -m ingestion.jobs.load_hansung_notice_vectors \
   --input-dir data/raw/hansung-notice \
   --init-schema
 ```
+
+적재 결과는 `inserted_count`, `updated_count`, `skipped_count`, `deleted_count`로 나뉘어 출력됩니다.
 
 현재 기본 임베딩은 `.env`의 `MAIN_AGENT_EMBEDDING_PROVIDER=e5` 설정을 따라
 `intfloat/multilingual-e5-small`을 사용합니다. 이 모델의 출력 차원은 384이므로

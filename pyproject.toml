@@ -29,7 +29,12 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["agents/library/tests", "agents/main_agent/tests", "agents/orchestrator/tests"]
+testpaths = [
+  "agents/library/tests",
+  "agents/main_agent/tests",
+  "agents/orchestrator/tests",
+  "ingestion/tests",
+]
 markers = [
   "integration: tests that may download local models or call external services",
 ]
