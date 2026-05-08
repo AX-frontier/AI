@@ -65,9 +65,10 @@ class HselNoticeListItem:
 class HselCrawlResult:
     page_count: int = 0
     notice_count: int = 0
+    updated_count: int = 0
+    unchanged_count: int = 0
     skip_count: int = 0
     error_count: int = 0
 
     def to_dict(self) -> dict[str, int]:
         return asdict(self)
-

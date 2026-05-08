@@ -8,6 +8,8 @@ from typing import Any
 
 from .models import HselDocument
 
+SaveStatus = str
+
 
 class HselStorage:
     def __init__(self, output_dir: Path):
@@ -20,13 +22,16 @@ class HselStorage:
     def is_saved(self, doc_type: str, document_id: str) -> bool:
         return (self.markdown_dir / doc_type / f"{document_id}.md").exists()
 
-    def save_document(self, document: HselDocument) -> None:
+    def save_document(self, document: HselDocument) -> SaveStatus:
         record = document.to_json_record()
         record.update(_build_hashes(document))
         markdown_dir = self.markdown_dir / document.doc_type
         json_dir = self.json_dir / document.doc_type
         markdown_dir.mkdir(parents=True, exist_ok=True)
         json_dir.mkdir(parents=True, exist_ok=True)
+        status = self._detect_save_status(document.doc_type, document.document_id, record["content_hash"])
+        if status == "unchanged":
+            return status
 
         (markdown_dir / f"{document.document_id}.md").write_text(
             self._render_markdown(document),
@@ -37,6 +42,7 @@ class HselStorage:
             encoding="utf-8",
         )
         self._save_metadata(document, record, json_dir)
+        return status
 
     def log_error(self, stage: str, payload: dict[str, Any], error: Exception) -> None:
         self.errors_path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,6 +100,23 @@ class HselStorage:
             encoding="utf-8",
         )
 
+    def _detect_save_status(
+        self,
+        doc_type: str,
+        document_id: str,
+        content_hash: str,
+    ) -> SaveStatus:
+        record_path = self.json_dir / doc_type / f"{document_id}.json"
+        if not record_path.exists():
+            return "created"
+        try:
+            existing = json.loads(record_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return "updated"
+        if existing.get("content_hash") == content_hash:
+            return "unchanged"
+        return "updated"
+
 
 def _build_hashes(document: HselDocument) -> dict[str, str]:
     body_hash = _sha256(_normalize_text(document.content_markdown))
@@ -107,4 +130,3 @@ def _normalize_text(value: str) -> str:
 
 def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
