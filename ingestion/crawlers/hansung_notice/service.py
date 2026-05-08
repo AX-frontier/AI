@@ -65,17 +65,16 @@ class HansungNoticeCrawler:
                         continue
                     seen_notice_ids.add(item.notice_id)
 
-                    if self.storage.is_saved(item.notice_id):
-                        result.skip_count += 1
+                    status = self._process_detail(item, result)
+                    if status == "unchanged":
                         existing_streak += 1
                         if existing_streak >= self.config.existing_notice_stop_threshold:
                             result.stopped_reason = "existing_notice_threshold"
                             stop_current_category = True
                             break
                         continue
-
-                    existing_streak = 0
-                    self._process_detail(item, result)
+                    if status in {"created", "updated"}:
+                        existing_streak = 0
 
                 if self._page_is_older_than_cutoff(list_items):
                     break
@@ -101,31 +100,38 @@ class HansungNoticeCrawler:
             _parse_date(item.published_at) < self.config.since_date for item in dated_items
         )
 
-    def _process_detail(self, item: NoticeListItem, result: CrawlResult) -> None:
+    def _process_detail(self, item: NoticeListItem, result: CrawlResult) -> str | None:
         try:
             detail_html = self.fetcher.get(item.detail_url)
         except Exception as error:
             result.error_count += 1
             self.storage.log_error("fetch-detail", {"notice_id": item.notice_id}, error)
-            return
+            return None
 
         try:
             notice = parse_detail(detail_html, item, skip_image_only=self.config.skip_image_only)
         except Exception as error:
             result.error_count += 1
             self.storage.log_error("parse-detail", {"notice_id": item.notice_id}, error)
-            return
+            return None
 
         if notice is None:
             result.skip_count += 1
-            return
+            return "skipped"
 
         try:
-            self.storage.save_notice(notice)
-            result.saved_count += 1
+            status = self.storage.save_notice(notice)
+            if status == "created":
+                result.saved_count += 1
+            elif status == "updated":
+                result.updated_count += 1
+            elif status == "unchanged":
+                result.unchanged_count += 1
+            return status
         except Exception as error:
             result.error_count += 1
             self.storage.log_error("save", {"notice_id": item.notice_id}, error)
+            return None
 
     def _fetch_list_page(self, category: dict[str, Any], page: int) -> str:
         if page == 1 and self.config.since_date is None:

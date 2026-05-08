@@ -9,6 +9,8 @@ from typing import Any
 
 from .models import Notice
 
+SaveStatus = str
+
 
 class Storage:
     def __init__(self, output_dir: Path):
@@ -21,7 +23,7 @@ class Storage:
     def is_saved(self, notice_id: str) -> bool:
         return any(self.markdown_dir.glob(f"*/{notice_id}.md"))
 
-    def save_notice(self, notice: Notice) -> None:
+    def save_notice(self, notice: Notice) -> SaveStatus:
         record = notice.to_json_record()
         record.update(_build_hashes(notice))
         category_key = _safe_path_name(notice.source_category_key)
@@ -29,6 +31,9 @@ class Storage:
         json_dir = self.json_dir / category_key
         markdown_dir.mkdir(parents=True, exist_ok=True)
         json_dir.mkdir(parents=True, exist_ok=True)
+        status = self._detect_save_status(notice.notice_id, record["content_hash"])
+        if status == "unchanged":
+            return status
 
         (markdown_dir / f"{notice.notice_id}.md").write_text(
             self._render_markdown(notice),
@@ -39,6 +44,8 @@ class Storage:
             encoding="utf-8",
         )
         self._save_kb_metadata(notice, json_dir)
+        self._remove_stale_files(notice.notice_id, markdown_dir, json_dir)
+        return status
 
     def log_error(self, stage: str, payload: dict[str, Any], error: Exception) -> None:
         self._append_jsonl(
@@ -108,6 +115,34 @@ class Storage:
             json.dumps({"metadataAttributes": attrs}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    def _detect_save_status(self, notice_id: str, content_hash: str) -> SaveStatus:
+        existing_paths = list(self.json_dir.glob(f"*/{notice_id}.json"))
+        if not existing_paths:
+            return "created"
+        for path in existing_paths:
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if existing.get("content_hash") == content_hash:
+                return "unchanged"
+        return "updated"
+
+    def _remove_stale_files(self, notice_id: str, markdown_dir: Path, json_dir: Path) -> None:
+        current_paths = {
+            markdown_dir / f"{notice_id}.md",
+            json_dir / f"{notice_id}.json",
+            json_dir / f"{notice_id}.md.metadata.json",
+        }
+        stale_paths = [
+            *self.markdown_dir.glob(f"*/{notice_id}.md"),
+            *self.json_dir.glob(f"*/{notice_id}.json"),
+            *self.json_dir.glob(f"*/{notice_id}.md.metadata.json"),
+        ]
+        for path in stale_paths:
+            if path not in current_paths:
+                path.unlink(missing_ok=True)
 
 
 def _to_jsonable(value: Any) -> Any:

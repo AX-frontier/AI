@@ -74,6 +74,8 @@ class NoticeListItem:
 @dataclass(slots=True)
 class CrawlResult:
     saved_count: int = 0
+    updated_count: int = 0
+    unchanged_count: int = 0
     skip_count: int = 0
     error_count: int = 0
     processed_pages: int = 0

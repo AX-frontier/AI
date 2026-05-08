@@ -31,18 +31,19 @@ class HselLibraryCrawler:
     def _crawl_info_pages(self, result: HselCrawlResult) -> None:
         html = self.fetcher.get(self.config.base_url)
         for title, url in discover_public_pages(html, self.config.base_url):
-            document_id = url.rsplit("/", 1)[-1].split("?", 1)[0].replace(".mir", "")
-            if self.storage.is_saved("pages", document_id):
-                result.skip_count += 1
-                continue
             try:
                 page_html = self.fetcher.get(url)
                 document = parse_info_page(page_html, url, title)
                 if document is None:
                     result.skip_count += 1
                     continue
-                self.storage.save_document(document)
-                result.page_count += 1
+                status = self.storage.save_document(document)
+                if status == "created":
+                    result.page_count += 1
+                elif status == "updated":
+                    result.updated_count += 1
+                elif status == "unchanged":
+                    result.unchanged_count += 1
             except Exception as error:
                 result.error_count += 1
                 self.storage.log_error("page", {"title": title, "url": url}, error)
@@ -66,9 +67,6 @@ class HselLibraryCrawler:
                 if self._is_older_than_cutoff(item.published_at):
                     result.skip_count += 1
                     continue
-                if self.storage.is_saved("notices", item.notice_id):
-                    result.skip_count += 1
-                    continue
                 self._process_notice(item, result)
 
     def _process_notice(self, item: HselNoticeListItem, result: HselCrawlResult) -> None:
@@ -78,8 +76,13 @@ class HselLibraryCrawler:
             if document is None:
                 result.skip_count += 1
                 return
-            self.storage.save_document(document)
-            result.notice_count += 1
+            status = self.storage.save_document(document)
+            if status == "created":
+                result.notice_count += 1
+            elif status == "updated":
+                result.updated_count += 1
+            elif status == "unchanged":
+                result.unchanged_count += 1
         except Exception as error:
             result.error_count += 1
             self.storage.log_error("notice-detail", {"notice_id": item.notice_id}, error)
@@ -96,4 +99,3 @@ class HselLibraryCrawler:
         return bool(dated) and all(
             date.fromisoformat(item.published_at) < self.config.since_date for item in dated
         )
-

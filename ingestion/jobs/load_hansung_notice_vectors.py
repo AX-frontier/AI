@@ -47,7 +47,7 @@ def main() -> None:
         init_main_agent_schema(engine, args.schema_path)
 
     embedding_provider = get_embedding_provider()
-    inserted_count = upsert_chunks(
+    upsert_result = upsert_chunks(
         engine=engine,
         chunks=chunks,
         embedding_provider=embedding_provider,
@@ -56,9 +56,9 @@ def main() -> None:
         json.dumps(
                 {
                     "input_dir": str(input_dir),
-                    "inserted_count": inserted_count,
                     "embedding_provider": embedding_provider.__class__.__name__,
                     "embedding_dimensions": embedding_provider.dimensions,
+                    **upsert_result.to_dict(),
                 },
             ensure_ascii=False,
             indent=2,
