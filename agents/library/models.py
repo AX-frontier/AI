@@ -28,3 +28,14 @@ class GuideDocRecord:
     content: str
     updated_at: datetime | None = None
 
+
+@dataclass(frozen=True)
+class GuideChunkRecord:
+    id: int
+    guide_doc_id: int
+    title: str
+    source_url: str | None
+    content: str
+    chunk_index: int
+    score: float
+    updated_at: datetime | None = None
