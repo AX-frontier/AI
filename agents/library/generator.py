@@ -87,13 +87,15 @@ def _compose_guide_answer(title: str, content: str) -> str:
 
 
 def _generate_guide_answer(context: GuideContext, llm_client: LLMClient) -> str:
+    import logging
     primary_chunk = context.chunks[0] if context.chunks else None
     primary = context.docs[0]
     fallback_title = primary_chunk.title if primary_chunk else primary.title
     fallback_content = primary_chunk.content if primary_chunk else primary.content
     try:
         answer = llm_client.generate(_build_guide_answer_prompt(context))
-    except Exception:
+    except Exception as e:
+        logging.getLogger(__name__).warning("LLM guide answer generation failed: %s", e)
         return _compose_guide_answer(fallback_title, fallback_content)
     return answer.strip() if answer and answer.strip() else _compose_guide_answer(
         fallback_title,
