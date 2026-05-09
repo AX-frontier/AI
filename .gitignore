@@ -48,3 +48,6 @@ data/processed/**
 *.index
 *.onnx
 *.bin
+
+
+agents/library/book-search/**

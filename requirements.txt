@@ -1,3 +1,4 @@
 openpyxl
 psycopg2-binary
 google-genai>=1.0,<2.0
+beautifulsoup4
