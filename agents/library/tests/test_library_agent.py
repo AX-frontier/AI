@@ -142,7 +142,11 @@ def test_book_location_answer_uses_location_fields() -> None:
 
 
 def test_guide_question_uses_guide_docs() -> None:
-    response = run_library_agent(make_request("학술정보관 운영 시간 알려줘"), make_repository())
+    response = run_library_agent(
+        make_request("학술정보관 운영 시간 알려줘"),
+        make_repository(),
+        llm_client=MockLLMClient("학술정보관은 평일 09:00부터 21:00까지 운영합니다."),
+    )
 
     assert response.intent == "LIBRARY_GUIDE"
     assert response.fallbackUsed is False
@@ -341,7 +345,11 @@ def test_semantic_guide_hit_answers_when_exact_keyword_does_not_match(monkeypatc
         lambda: FakeEmbeddingProvider(),
     )
 
-    response = run_library_agent(make_request("오늘 몇 시까지 열어요?"), SemanticGuideRepository())
+    response = run_library_agent(
+        make_request("오늘 몇 시까지 열어요?"),
+        SemanticGuideRepository(),
+        llm_client=MockLLMClient("학술정보관은 학기 중 평일 09:00부터 21:00까지 운영합니다."),
+    )
 
     assert response.intent == "LIBRARY_GUIDE"
     assert response.fallbackUsed is False

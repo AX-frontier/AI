@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from agents.main_agent.agent import run_main_agent
 from agents.main_agent.api.schemas import MainChatRequest
 from agents.main_agent.embedding import DeterministicEmbeddingProvider
@@ -21,6 +23,16 @@ class MockChunkRepository:
     ) -> list[MainChunkRecord]:
         self.last_embedding = query_embedding
         return self.chunks[:limit]
+
+
+class RecordingLLMClient:
+    def __init__(self, answer: str = "검색 근거 기반 답변입니다."):
+        self.answer = answer
+        self.prompts: list[str] = []
+
+    def generate(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.answer
 
 
 def test_main_agent_builds_answer_with_sources() -> None:
@@ -56,7 +68,10 @@ def test_main_agent_builds_answer_with_sources() -> None:
     assert response.targetAgent == "MAIN"
     assert response.intent == "ACADEMIC_INFO_QA"
     assert response.fallbackUsed is False
-    assert response.answer == "복수·부전공 신청 안내에 대한 답변입니다."
+    assert '"복수전공 신청 기간"와 관련해 확인할 수 있는 공식 링크를 찾았습니다.' in response.answer
+    assert "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내" in response.answer
+    assert "복수·부전공 신청 안내에 대한 답변입니다." in response.answer
+    assert "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do" in response.answer
     assert response.resultCount == 1
     assert response.sources[0].documentId == "219610"
     assert repository.last_embedding is not None
@@ -142,4 +157,180 @@ def test_main_agent_falls_back_to_template_when_llm_fails() -> None:
     )
 
     assert response.fallbackUsed is False
-    assert response.answer.startswith("2026학년도 1학기 복수·부전공 신청")
+    assert response.answer.startswith('"복수전공 신청 기간"와 관련해 확인할 수 있는 공식 링크를 찾았습니다.')
+    assert "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내와 관련된 한성대학교 공식 안내 링크입니다." in response.answer
+    assert "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do" in response.answer
+
+
+def test_main_agent_prompt_limits_reference_urls_to_top_three() -> None:
+    llm_client = RecordingLLMClient(
+        "\n".join(
+            [
+                "1. 첫 번째 공지에서 확인할 수 있습니다.",
+                "2. 두 번째 공지에서 확인할 수 있습니다.",
+                "3. 세 번째 공지에서 확인할 수 있습니다.",
+            ]
+        )
+    )
+
+    chunks = [
+        MainChunkRecord(
+            chunk_id=f"notice-{index}-0001",
+            document_id=f"notice-{index}",
+            text=f"공지 {index} 본문입니다.",
+            score=0.9 - (index * 0.01),
+            metadata={
+                "title": f"공지 {index}",
+                "category": "학사",
+                "url": f"https://example.edu/notice-{index}",
+            },
+        )
+        for index in range(1, 5)
+    ]
+
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_prompt",
+            traceId="tr_prompt",
+            conversationUid="conv_prompt",
+            message="공지 URL 알려줘",
+        ),
+        repository=MockChunkRepository(chunks),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=llm_client,
+    )
+
+    assert "첫 번째 공지에서 확인할 수 있습니다." in response.answer
+    assert "두 번째 공지에서 확인할 수 있습니다." in response.answer
+    assert "세 번째 공지에서 확인할 수 있습니다." in response.answer
+    assert "1. 공지 1" in response.answer
+    assert "2. 공지 2" in response.answer
+    assert "3. 공지 3" in response.answer
+    assert "https://example.edu/notice-1" in response.answer
+    assert "https://example.edu/notice-2" in response.answer
+    assert "https://example.edu/notice-3" in response.answer
+    assert "https://example.edu/notice-4" not in response.answer
+    assert len(llm_client.prompts) == 1
+    prompt = llm_client.prompts[0]
+    assert "URL은 절대 출력하지 마세요." in prompt
+    assert "검색 source:" in prompt
+    assert "title: 공지 1" in prompt
+    assert "title: 공지 2" in prompt
+    assert "title: 공지 3" in prompt
+    assert "title: 공지 4" not in prompt
+    assert "url: https://example.edu/notice-1" in prompt
+    assert "https://example.edu/notice-4" not in prompt
+    assert response.sources[0].url == "https://example.edu/notice-1"
+
+
+def test_main_agent_template_answer_omits_empty_urls_from_reference_list() -> None:
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_template",
+            traceId="tr_template",
+            conversationUid="conv_template",
+            message="공지 URL 알려줘",
+        ),
+        repository=MockChunkRepository(
+            [
+                MainChunkRecord(
+                    chunk_id="notice-url-1-0001",
+                    document_id="notice-url-1",
+                    text="URL이 있는 공지입니다.",
+                    score=0.9,
+                    metadata={
+                        "title": "URL 있는 공지",
+                        "category": "학사",
+                        "url": "https://example.edu/notice-url-1",
+                    },
+                ),
+                MainChunkRecord(
+                    chunk_id="notice-url-empty-0001",
+                    document_id="notice-url-empty",
+                    text="URL이 없는 공지입니다.",
+                    score=0.88,
+                    metadata={
+                        "title": "URL 없는 공지",
+                        "category": "학사",
+                    },
+                ),
+                MainChunkRecord(
+                    chunk_id="notice-url-2-0001",
+                    document_id="notice-url-2",
+                    text="두 번째 URL 공지입니다.",
+                    score=0.86,
+                    metadata={
+                        "title": "두 번째 URL 공지",
+                        "category": "학사",
+                        "url": "https://example.edu/notice-url-2",
+                    },
+                ),
+            ]
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=MockLLMClient(should_fail=True),
+    )
+
+    assert "1. URL 있는 공지" in response.answer
+    assert "https://example.edu/notice-url-1" in response.answer
+    assert "2. 두 번째 URL 공지" in response.answer
+    assert "https://example.edu/notice-url-2" in response.answer
+    assert "URL 없는 공지와 관련된 한성대학교 공식 안내 링크입니다." not in response.answer
+    assert "URL 없는 공지" in response.sources[1].title
+
+
+@pytest.mark.parametrize(
+    ("message", "title", "text"),
+    [
+        (
+            "복수전공 신청 기간 알려줘",
+            "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내",
+            "복수전공과 부전공 신청 기간 및 변경 절차 안내입니다.",
+        ),
+        (
+            "수강신청 정정 기간 언제야?",
+            "2026학년도 1학기 수강신청 정정 안내",
+            "수강신청 정정 기간과 신청 방법에 대한 학사 공지입니다.",
+        ),
+        (
+            "휴복학 신청 기간 알려줘",
+            "2026학년도 1학기 휴·복학 신청 안내",
+            "휴학과 복학 신청 기간 및 처리 절차 안내입니다.",
+        ),
+    ],
+)
+def test_main_agent_keeps_top_source_for_search_quality_baseline(
+    message: str,
+    title: str,
+    text: str,
+) -> None:
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_quality",
+            traceId="tr_quality",
+            conversationUid="conv_quality",
+            message=message,
+        ),
+        repository=MockChunkRepository(
+            [
+                MainChunkRecord(
+                    chunk_id="notice-quality-0001",
+                    document_id="notice-quality",
+                    text=text,
+                    score=0.9,
+                    metadata={
+                        "title": title,
+                        "category": "학사",
+                        "posted_date": "2026-01-26",
+                        "url": "https://example.edu/quality",
+                    },
+                )
+            ]
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=MockLLMClient("검색 기준 답변입니다."),
+    )
+
+    assert response.fallbackUsed is False
+    assert response.sources[0].title == title
+    assert response.sources[0].score >= 0.9

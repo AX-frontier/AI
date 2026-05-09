@@ -8,7 +8,7 @@ from agents.library.repository import LibraryRepository, get_library_repository
 from agents.library.retrieval import BookRetriever, GuideRetriever, collect_retrieval_evidence
 from agents.main_agent.embedding import EmbeddingProvider, get_embedding_provider
 from agents.main_agent.repository import MainChunkRepository, get_main_chunk_repository
-from agents.main_agent.retrieval import extract_main_search_keyword
+from agents.main_agent.retrieval import MainRetriever
 
 
 @dataclass(frozen=True)
@@ -48,17 +48,18 @@ class RoutingEvidenceCollector:
 
     def _collect_main_evidence(self, message: str) -> AgentEvidence:
         repository = self._main_repository or get_main_chunk_repository()
-        keyword = extract_main_search_keyword(message)
-        embedding = self._embedding_provider.embed_query(keyword)
-        chunks = repository.search_similar_chunks(embedding, limit=1)
+        result = MainRetriever(repository, self._embedding_provider).retrieve(message, limit=3)
+        chunks = result.chunks
         if not chunks:
             return AgentEvidence(score=0.0, reason="no main vector chunk hit")
 
         top = chunks[0]
-        title = top.title
+        hits = ", ".join(
+            f"{chunk.title} ({chunk.chunk_id}, {chunk.score:.3f})" for chunk in chunks[:3]
+        )
         return AgentEvidence(
             score=round(max(0.0, min(1.0, top.score)), 3),
-            reason=f"top main chunk: {title} ({top.chunk_id})",
+            reason=f"main reranked hits: {hits}",
         )
 
     def _collect_library_evidence(self, message: str) -> AgentEvidence:
