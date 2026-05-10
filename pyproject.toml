@@ -33,6 +33,7 @@ testpaths = [
   "agents/library/tests",
   "agents/main_agent/tests",
   "agents/orchestrator/tests",
+  "agents/document_review/tests",
   "ingestion/tests",
 ]
 markers = [
