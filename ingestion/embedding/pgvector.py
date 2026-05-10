@@ -29,6 +29,31 @@ class VectorUpsertResult:
         return payload
 
 
+@dataclass(frozen=True, slots=True)
+class LibraryGuideUpsertResult:
+    inserted_doc_count: int = 0
+    updated_doc_count: int = 0
+    skipped_doc_count: int = 0
+    inserted_chunk_count: int = 0
+    updated_chunk_count: int = 0
+    skipped_chunk_count: int = 0
+    deleted_chunk_count: int = 0
+
+    @property
+    def processed_doc_count(self) -> int:
+        return self.inserted_doc_count + self.updated_doc_count + self.skipped_doc_count
+
+    @property
+    def processed_chunk_count(self) -> int:
+        return self.inserted_chunk_count + self.updated_chunk_count + self.skipped_chunk_count
+
+    def to_dict(self) -> dict[str, int]:
+        payload = asdict(self)
+        payload["processed_doc_count"] = self.processed_doc_count
+        payload["processed_chunk_count"] = self.processed_chunk_count
+        return payload
+
+
 def init_main_agent_schema(engine: Engine, schema_path: Path) -> None:
     """Create pgvector schema/table/indexes used by Main Agent retrieval."""
     sql = schema_path.read_text(encoding="utf-8")
@@ -128,32 +153,56 @@ def upsert_library_guide_chunks(
     engine: Engine,
     chunks: list[ChunkDocument],
     embedding_provider: EmbeddingProvider,
-) -> tuple[int, int]:
-    """Embed and upsert HSEL guide docs into library.guide_docs/chunks."""
+) -> LibraryGuideUpsertResult:
+    """Embed and upsert only changed HSEL guide docs into library.guide_docs/chunks."""
     chunks_by_document: dict[str, list[ChunkDocument]] = {}
     for chunk in chunks:
         chunks_by_document.setdefault(chunk.document_id, []).append(chunk)
 
-    guide_doc_count = 0
-    chunk_count = 0
+    result = LibraryGuideUpsertResult()
     with engine.begin() as connection:
         for document_chunks in chunks_by_document.values():
             document_chunks.sort(key=lambda chunk: int(chunk.metadata.get("chunk_index", 0)))
             document_chunks = _dedupe_document_chunks(document_chunks)
             first_chunk = document_chunks[0]
             metadata = first_chunk.metadata
+            source_url = _guide_doc_source_url(metadata.get("url"), first_chunk.document_id)
+            title = str(metadata.get("title") or first_chunk.document_id)
+            content = "\n\n".join(chunk.text for chunk in document_chunks)
+            content_hash = _sha256(content)
+            existing_doc = _load_existing_guide_doc(
+                connection=connection,
+                source_url=source_url,
+            )
+            if existing_doc and _is_unchanged_guide_doc(existing_doc, content_hash):
+                if _needs_guide_doc_metadata_update(existing_doc, title, content_hash):
+                    _update_guide_doc_metadata(
+                        connection=connection,
+                        guide_doc_id=int(existing_doc["id"]),
+                        title=title,
+                        content=content,
+                        content_hash=content_hash,
+                    )
+                result = _add_library_result(
+                    result,
+                    skipped_doc_count=1,
+                    skipped_chunk_count=len(document_chunks),
+                )
+                continue
+
             guide_doc_id = _upsert_guide_doc(
                 connection=connection,
-                title=str(metadata.get("title") or first_chunk.document_id),
-                source_url=metadata.get("url"),
-                content="\n\n".join(chunk.text for chunk in document_chunks),
+                title=title,
+                source_url=source_url,
+                content=content,
+                content_hash=content_hash,
             )
-            guide_doc_count += 1
 
-            connection.execute(
+            delete_result = connection.execute(
                 text("DELETE FROM library.guide_doc_chunks WHERE guide_doc_id = :guide_doc_id"),
                 {"guide_doc_id": guide_doc_id},
             )
+            deleted_chunk_count = delete_result.rowcount or 0
             for chunk_index, chunk in enumerate(document_chunks):
                 embedding = embedding_provider.embed_document(chunk.text)
                 connection.execute(
@@ -166,9 +215,22 @@ def upsert_library_guide_chunks(
                         "content_hash": _sha256(chunk.text),
                     },
                 )
-                chunk_count += 1
+            if existing_doc is None:
+                result = _add_library_result(
+                    result,
+                    inserted_doc_count=1,
+                    inserted_chunk_count=len(document_chunks),
+                    deleted_chunk_count=deleted_chunk_count,
+                )
+            else:
+                result = _add_library_result(
+                    result,
+                    updated_doc_count=1,
+                    updated_chunk_count=len(document_chunks),
+                    deleted_chunk_count=deleted_chunk_count,
+                )
 
-    return guide_doc_count, chunk_count
+    return result
 
 
 def _dedupe_document_chunks(chunks: list[ChunkDocument]) -> list[ChunkDocument]:
@@ -214,47 +276,21 @@ def _upsert_guide_doc(
     *,
     connection: Connection,
     title: str,
-    source_url: object,
+    source_url: str,
     content: str,
+    content_hash: str,
 ) -> int:
-    existing_id = None
-    if source_url:
-        existing_id = connection.execute(
-            text(
-                """
-                SELECT id
-                FROM library.guide_docs
-                WHERE source_url = :source_url
-                ORDER BY id ASC
-                LIMIT 1
-                """
-            ),
-            {"source_url": str(source_url)},
-        ).scalar_one_or_none()
-
-    if existing_id is not None:
-        return int(
-            connection.execute(
-                text(
-                    """
-                    UPDATE library.guide_docs
-                    SET title = :title,
-                        content = :content,
-                        updated_at = NOW()
-                    WHERE id = :id
-                    RETURNING id
-                    """
-                ),
-                {"id": existing_id, "title": title, "content": content},
-            ).scalar_one()
-        )
-
     return int(
         connection.execute(
             text(
                 """
-                INSERT INTO library.guide_docs (source_url, title, content)
-                VALUES (:source_url, :title, :content)
+                INSERT INTO library.guide_docs (source_url, title, content, content_hash)
+                VALUES (:source_url, :title, :content, :content_hash)
+                ON CONFLICT (source_url) DO UPDATE SET
+                  title = EXCLUDED.title,
+                  content = EXCLUDED.content,
+                  content_hash = EXCLUDED.content_hash,
+                  updated_at = NOW()
                 RETURNING id
                 """
             ),
@@ -262,8 +298,74 @@ def _upsert_guide_doc(
                 "source_url": str(source_url) if source_url else None,
                 "title": title,
                 "content": content,
+                "content_hash": content_hash,
             },
         ).scalar_one()
+    )
+
+
+def _load_existing_guide_doc(
+    *,
+    connection: Connection,
+    source_url: str,
+) -> dict | None:
+    row = connection.execute(
+        text(
+            """
+            SELECT id, title, content, content_hash
+            FROM library.guide_docs
+            WHERE source_url = :source_url
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ),
+        {"source_url": str(source_url)},
+    ).mappings().first()
+    return dict(row) if row is not None else None
+
+
+def _guide_doc_source_url(source_url: object, document_id: str) -> str:
+    if source_url:
+        return str(source_url)
+    return f"urn:hsel-library:{document_id}"
+
+
+def _is_unchanged_guide_doc(existing_doc: dict, incoming_hash: str) -> bool:
+    existing_hash = existing_doc.get("content_hash")
+    if existing_hash:
+        return str(existing_hash) == incoming_hash
+    return _sha256(str(existing_doc.get("content") or "")) == incoming_hash
+
+
+def _needs_guide_doc_metadata_update(existing_doc: dict, title: str, content_hash: str) -> bool:
+    return str(existing_doc.get("title") or "") != title or str(existing_doc.get("content_hash") or "") != content_hash
+
+
+def _update_guide_doc_metadata(
+    *,
+    connection: Connection,
+    guide_doc_id: int,
+    title: str,
+    content: str,
+    content_hash: str,
+) -> None:
+    connection.execute(
+        text(
+            """
+            UPDATE library.guide_docs
+            SET title = :title,
+                content = :content,
+                content_hash = :content_hash,
+                updated_at = NOW()
+            WHERE id = :id
+            """
+        ),
+        {
+            "id": guide_doc_id,
+            "title": title,
+            "content": content,
+            "content_hash": content_hash,
+        },
     )
 
 
@@ -320,4 +422,26 @@ def _add_result(
         updated_count=result.updated_count + updated_count,
         skipped_count=result.skipped_count + skipped_count,
         deleted_count=result.deleted_count + deleted_count,
+    )
+
+
+def _add_library_result(
+    result: LibraryGuideUpsertResult,
+    *,
+    inserted_doc_count: int = 0,
+    updated_doc_count: int = 0,
+    skipped_doc_count: int = 0,
+    inserted_chunk_count: int = 0,
+    updated_chunk_count: int = 0,
+    skipped_chunk_count: int = 0,
+    deleted_chunk_count: int = 0,
+) -> LibraryGuideUpsertResult:
+    return LibraryGuideUpsertResult(
+        inserted_doc_count=result.inserted_doc_count + inserted_doc_count,
+        updated_doc_count=result.updated_doc_count + updated_doc_count,
+        skipped_doc_count=result.skipped_doc_count + skipped_doc_count,
+        inserted_chunk_count=result.inserted_chunk_count + inserted_chunk_count,
+        updated_chunk_count=result.updated_chunk_count + updated_chunk_count,
+        skipped_chunk_count=result.skipped_chunk_count + skipped_chunk_count,
+        deleted_chunk_count=result.deleted_chunk_count + deleted_chunk_count,
     )

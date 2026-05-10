@@ -39,11 +39,18 @@ CREATE TABLE IF NOT EXISTS library.guide_docs (
   source_url TEXT,
   title VARCHAR(500) NOT NULL,
   content TEXT NOT NULL,
+  content_hash TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_guide_docs_source_url
+ALTER TABLE library.guide_docs
+  ADD COLUMN IF NOT EXISTS content_hash TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_guide_docs_source_url
   ON library.guide_docs (source_url);
+
+CREATE INDEX IF NOT EXISTS idx_guide_docs_content_hash
+  ON library.guide_docs (content_hash);
 
 CREATE TABLE IF NOT EXISTS library.guide_doc_chunks (
   id BIGSERIAL PRIMARY KEY,

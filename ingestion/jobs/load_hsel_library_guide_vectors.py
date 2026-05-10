@@ -46,7 +46,7 @@ def main() -> None:
         init_schema(engine, args.schema_path)
 
     embedding_provider = get_embedding_provider()
-    guide_doc_count, chunk_count = upsert_library_guide_chunks(
+    upsert_result = upsert_library_guide_chunks(
         engine=engine,
         chunks=chunks,
         embedding_provider=embedding_provider,
@@ -55,10 +55,9 @@ def main() -> None:
         json.dumps(
             {
                 "input_dir": str(input_dir),
-                "guide_doc_count": guide_doc_count,
-                "chunk_count": chunk_count,
                 "embedding_provider": embedding_provider.__class__.__name__,
                 "embedding_dimensions": embedding_provider.dimensions,
+                **upsert_result.to_dict(),
             },
             ensure_ascii=False,
             indent=2,
