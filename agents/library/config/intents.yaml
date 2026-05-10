@@ -14,8 +14,8 @@ intents:
       - 청구기호
       - 자료
     negativeKeywords:
-      - 도서관
-      - 학술정보관
+      - 운영 시간
+      - 휴관
     examples:
       - 파이썬 책 찾아줘
       - 김코딩 저자 도서 검색
@@ -108,4 +108,3 @@ keywordCleanup:
   - 도서관
   - 안내
   - 알려줘
-

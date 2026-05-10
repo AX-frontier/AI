@@ -42,9 +42,19 @@ class BookRetriever:
     def __init__(self, repository: LibraryRepository):
         self._repository = repository
 
-    def retrieve(self, keyword: str, limit: int = 5) -> BookSearchResult:
+    def retrieve(
+        self,
+        keyword: str,
+        limit: int = 5,
+        *,
+        location_question: bool = False,
+    ) -> BookSearchResult:
         """도서명, 저자, 출판사, 청구기호, 위치 기준으로 library.books를 검색한다."""
-        books = self._repository.search_books(keyword, limit=limit)
+        books = self._repository.search_books(
+            keyword,
+            limit=limit,
+            location_question=location_question,
+        )
         return BookSearchResult(keyword=keyword, books=books)
 
 
@@ -58,6 +68,7 @@ class GuideRetriever:
     ):
         self._repository = repository
         self._embedding_provider = embedding_provider
+        self._query_embedding_cache: dict[str, list[float]] = {}
 
     def retrieve(self, keyword: str, limit: int = 3) -> GuideSearchResult:
         """키워드 검색과 semantic 검색을 합쳐 관련 안내 chunk를 찾는다."""
@@ -91,7 +102,7 @@ class GuideRetriever:
 
         semantic_search = getattr(self._repository, "search_guide_chunks_by_embedding", None)
         if semantic_search:
-            embedding = self._get_embedding_provider().embed_query(keyword)
+            embedding = self._embed_query(keyword)
             candidates.extend(
                 semantic_search(
                     embedding,
@@ -106,6 +117,16 @@ class GuideRetriever:
             self._embedding_provider = get_embedding_provider()
         return self._embedding_provider
 
+    def _embed_query(self, keyword: str) -> list[float]:
+        normalized = keyword.strip()
+        cached = self._query_embedding_cache.get(normalized)
+        if cached is not None:
+            return cached
+
+        embedding = self._get_embedding_provider().embed_query(normalized)
+        self._query_embedding_cache[normalized] = embedding
+        return embedding
+
 
 def _dedupe_chunks(chunks: list[GuideChunkRecord]) -> list[GuideChunkRecord]:
     by_id: dict[int, GuideChunkRecord] = {}
@@ -118,10 +139,25 @@ def _dedupe_chunks(chunks: list[GuideChunkRecord]) -> list[GuideChunkRecord]:
 
 def _rerank_chunks(keyword: str, chunks: list[GuideChunkRecord]) -> list[GuideChunkRecord]:
     terms = _expand_terms(keyword)
-    reranked = [
-        replace(chunk, score=chunk.score + _lexical_boost(terms, chunk))
-        for chunk in chunks
-    ]
+    reranked = []
+    for chunk in chunks:
+        score = chunk.score + _lexical_boost(terms, chunk)
+        section_line = _first_section_line(chunk.content)
+        if section_line and any(term in section_line.lower() for term in terms):
+            score += 0.18
+        if _looks_table_heavy(chunk.content):
+            score -= 0.06
+        if _looks_stub_chunk(chunk.content):
+            score -= 0.08
+        if any(term in {"연체", "반납"} for term in terms) and section_line and any(
+            term in section_line.lower() for term in ("연체", "반납")
+        ):
+            score += 0.12
+        if any(term in {"운영", "시간", "개관", "휴관"} for term in terms) and section_line and any(
+            term in section_line.lower() for term in ("개관", "시간", "휴관")
+        ):
+            score += 0.12
+        reranked.append(replace(chunk, score=score))
     return sorted(reranked, key=lambda chunk: chunk.score, reverse=True)
 
 
@@ -178,6 +214,27 @@ def _lexical_boost(terms: list[str], chunk: GuideChunkRecord) -> float:
     return boost
 
 
+def _first_section_line(content: str) -> str | None:
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("섹션:"):
+            return stripped
+    return None
+
+
+def _looks_table_heavy(content: str) -> bool:
+    lines = [line for line in content.splitlines() if line.strip()]
+    table_lines = [line for line in lines if "|" in line]
+    return len(table_lines) >= 4 and len(table_lines) >= max(3, len(lines) // 2)
+
+
+def _looks_stub_chunk(content: str) -> bool:
+    normalized = " ".join(line.strip() for line in content.splitlines() if line.strip())
+    if len(normalized) < 80:
+        return True
+    return bool(re.fullmatch(r"[-|:0-9A-Za-z가-힣 ./()]+", normalized)) and normalized.count(".") == 0
+
+
 def _dedupe_guide_docs(chunks: list[GuideChunkRecord]) -> list[GuideChunkRecord]:
     by_doc_id: dict[int, GuideChunkRecord] = {}
     for chunk in chunks:
@@ -220,13 +277,27 @@ def collect_retrieval_evidence(
     keyword: str,
     book_retriever: BookRetriever,
     guide_retriever: GuideRetriever,
+    *,
+    book_probe_limit: int = 1,
+    guide_probe_limit: int = 1,
+    book_location_question: bool = False,
+    include_probe_results: bool = False,
 ) -> RetrievalEvidence:
     """분류기가 실제 검색 evidence를 쓸 수 있도록 각 저장소를 1건만 조회한다."""
-    book_probe = book_retriever.retrieve(keyword, limit=1)
-    guide_probe = guide_retriever.retrieve(keyword, limit=1)
+    book_probe = book_retriever.retrieve(
+        keyword,
+        limit=book_probe_limit,
+        location_question=book_location_question,
+    )
+    guide_probe = guide_retriever.retrieve(keyword, limit=guide_probe_limit)
     return RetrievalEvidence(
         book_hits=len(book_probe.books),
         guide_hits=len(guide_probe.docs),
         book_keyword=keyword,
         guide_keyword=keyword,
+        book_probe_limit=book_probe_limit,
+        guide_probe_limit=guide_probe_limit,
+        book_probe_location_question=book_location_question,
+        book_probe=book_probe if include_probe_results else None,
+        guide_probe=guide_probe if include_probe_results else None,
     )

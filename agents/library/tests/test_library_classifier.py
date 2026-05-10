@@ -62,9 +62,116 @@ def test_ambiguous_question_deterministically_falls_back_without_llm() -> None:
 
     assert result.intent == "LIBRARY_GENERAL"
     assert result.used_llm is False
-    assert result.ambiguous is True
+    assert result.ambiguous is False
+
+
+def test_library_plus_book_question_prefers_book_search() -> None:
+    result = classify_intent(
+        "도서관에 파이썬 책 있어?",
+        evidence=RetrievalEvidence(book_hits=1, guide_hits=1),
+    )
+
+    assert result.intent == "BOOK_SEARCH"
+
+
+def test_general_help_message_prefers_library_general_even_with_guide_hits() -> None:
+    result = classify_intent(
+        "도와줘",
+        evidence=RetrievalEvidence(guide_hits=1),
+    )
+
+    assert result.intent == "LIBRARY_GENERAL"
+
+
+def test_shelf_question_prefers_book_location() -> None:
+    result = classify_intent(
+        "1-A-1-d 서가 책 찾아줘",
+        evidence=RetrievalEvidence(book_hits=1),
+    )
+
+    assert result.intent == "BOOK_LOCATION"
+
+
+def test_library_book_location_question_prefers_book_location() -> None:
+    result = classify_intent(
+        "도서관에 파이썬 책 어디 있어?",
+        evidence=RetrievalEvidence(book_hits=1, guide_hits=1),
+    )
+
+    assert result.intent == "BOOK_LOCATION"
+
+
+def test_recommendation_question_prefers_book_recommendation() -> None:
+    result = classify_intent(
+        "도서관에서 볼만한 파이썬 책 추천해줘",
+        evidence=RetrievalEvidence(book_hits=1, guide_hits=1),
+    )
+
+    assert result.intent == "BOOK_RECOMMENDATION"
+
+
+def test_physical_book_search_beats_ebook_guide_term() -> None:
+    result = classify_intent(
+        "전자책 말고 종이책 찾아줘",
+        evidence=RetrievalEvidence(guide_hits=1),
+    )
+
+    assert result.intent == "BOOK_SEARCH"
+
+
+def test_general_inquiry_phrase_prefers_library_general() -> None:
+    result = classify_intent(
+        "문의하고 싶은 게 있어",
+        evidence=RetrievalEvidence(guide_hits=1),
+    )
+
+    assert result.intent == "LIBRARY_GENERAL"
+
+
+def test_recommendation_negation_prefers_book_search() -> None:
+    result = classify_intent(
+        "추천 말고 파이썬 책만 찾아줘",
+        evidence=RetrievalEvidence(book_hits=1),
+    )
+
+    assert result.intent == "BOOK_SEARCH"
+
+
+def test_book_topic_word_prefers_book_search_without_command_verb() -> None:
+    result = classify_intent(
+        "파이썬 말고 자바 입문서",
+        evidence=RetrievalEvidence(book_hits=1),
+    )
+
+    assert result.intent == "BOOK_SEARCH"
 
 
 def test_extract_search_keyword_uses_yaml_cleanup_phrases() -> None:
     assert extract_search_keyword("파이썬 도서 검색") == "파이썬"
 
+
+def test_extract_search_keyword_strips_trailing_book_indicator_for_book_intents() -> None:
+    assert extract_search_keyword("클린 코드 책 어디 있어?", "BOOK_LOCATION") == "클린 코드"
+    assert extract_search_keyword("컴퓨터 과학 도서를 찾아줘", "BOOK_SEARCH") == "컴퓨터 과학"
+    assert extract_search_keyword("파이썬 도서 추천해줘", "BOOK_RECOMMENDATION") == "파이썬"
+
+
+def test_extract_search_keyword_strips_trailing_book_field_qualifiers() -> None:
+    assert extract_search_keyword("슈카친구들 저자 도서 검색", "BOOK_SEARCH") == "슈카친구들"
+    assert extract_search_keyword("Facet 출판사 도서 검색", "BOOK_SEARCH") == "Facet"
+    assert extract_search_keyword("001 ㄱ785ㄷ 청구기호 위치 알려줘", "BOOK_LOCATION") == "001 ㄱ785ㄷ"
+    assert extract_search_keyword("1-A-1-d 서가 위치 알려줘", "BOOK_LOCATION") == "1-A-1-d"
+
+
+def test_extract_search_keyword_keeps_generic_book_term_for_short_book_queries() -> None:
+    assert extract_search_keyword("책 있어?", "BOOK_SEARCH") == "책"
+    assert extract_search_keyword("책 찾아줘", "BOOK_SEARCH") == "책"
+    assert extract_search_keyword("학술정보관 책", "BOOK_SEARCH") == "책"
+
+
+def test_extract_search_keyword_prefers_replacement_topic_after_exceptive_phrase() -> None:
+    assert extract_search_keyword("파이썬 말고 자바 입문서 찾아줘", "BOOK_SEARCH") == "자바 입문"
+
+
+def test_extract_search_keyword_without_intent_preserves_trailing_book_indicator() -> None:
+    assert extract_search_keyword("클린 코드 책 어디 있어?") == "클린 코드 책"

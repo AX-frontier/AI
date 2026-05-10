@@ -66,7 +66,8 @@ class RoutingEvidenceCollector:
         repository = self._library_repository or get_library_repository()
         book_retriever = BookRetriever(repository)
         guide_retriever = GuideRetriever(repository)
-        keyword = extract_search_keyword(message)
+        initial_classification = classify_intent(message)
+        keyword = extract_search_keyword(message, initial_classification.intent)
         retrieval_evidence = collect_retrieval_evidence(
             keyword,
             book_retriever=book_retriever,

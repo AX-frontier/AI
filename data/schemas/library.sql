@@ -1,6 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS library;
 
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE IF NOT EXISTS library.books (
   id BIGSERIAL PRIMARY KEY,
@@ -18,6 +19,13 @@ CREATE TABLE IF NOT EXISTS library.books (
   stack_location VARCHAR(100),
   stack_shelf VARCHAR(100),
   isbn TEXT,
+  title_normalized TEXT,
+  author_normalized TEXT,
+  publisher_normalized TEXT,
+  holding_call_no_normalized TEXT,
+  stack_location_normalized TEXT,
+  stack_shelf_normalized TEXT,
+  search_text_normalized TEXT,
   raw_data JSONB NOT NULL DEFAULT '{}'::jsonb,
   import_document_id BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -54,3 +62,51 @@ CREATE INDEX IF NOT EXISTS idx_guide_doc_chunks_embedding
   ON library.guide_doc_chunks
   USING ivfflat (embedding vector_cosine_ops)
   WITH (lists = 100);
+
+CREATE INDEX IF NOT EXISTS idx_books_title_trgm
+  ON library.books
+  USING gin (title gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_author_trgm
+  ON library.books
+  USING gin (author gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_publisher_trgm
+  ON library.books
+  USING gin (publisher gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_holding_call_no_trgm
+  ON library.books
+  USING gin (holding_call_no gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_stack_location_trgm
+  ON library.books
+  USING gin (stack_location gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_stack_shelf_trgm
+  ON library.books
+  USING gin (stack_shelf gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_title_normalized_trgm
+  ON library.books
+  USING gin (title_normalized gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_author_normalized_trgm
+  ON library.books
+  USING gin (author_normalized gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_publisher_normalized_trgm
+  ON library.books
+  USING gin (publisher_normalized gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_holding_call_no_normalized_trgm
+  ON library.books
+  USING gin (holding_call_no_normalized gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_stack_shelf_normalized_trgm
+  ON library.books
+  USING gin (stack_shelf_normalized gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_search_text_normalized_trgm
+  ON library.books
+  USING gin (search_text_normalized gin_trgm_ops);
