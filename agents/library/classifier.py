@@ -14,6 +14,44 @@ from agents.library.api.schemas import LibraryIntent
 CONFIG_PATH = Path(__file__).parent / "config" / "intents.yaml"
 AMBIGUOUS_MARGIN = 0.35
 LOW_CONFIDENCE_THRESHOLD = 0.55
+GENERIC_LIBRARY_TERMS = ("도서관", "학술정보관")
+LOCATION_HINTS = ("위치", "어디", "소장", "서가", "자료실", "층", "청구기호")
+BOOK_HINTS = ("검색", "찾아", "찾고", "도서", "책", "저자", "작가", "출판사", "관련")
+BOOK_GENERIC_TERMS = ("책", "도서")
+BOOK_TOPIC_HINTS = ("입문서", "교재", "전공서", "참고서")
+BOOK_QUERY_SUFFIXES = ("있어", "있나요", "있니", "있는지", "보여줘", "알려줘")
+BOOK_TOPIC_SUFFIX_REWRITES = (("입문서", "입문"),)
+RECOMMENDATION_HINTS = ("추천", "볼만한", "읽을만", "읽을 만", "비슷한")
+GUIDE_SPECIFIC_TERMS = (
+    "운영",
+    "시간",
+    "이용",
+    "휴관",
+    "열람실",
+    "좌석",
+    "예약",
+    "반납",
+    "대출",
+    "연장",
+    "회원",
+    "문의",
+    "전자책",
+    "전자자료",
+    "db",
+    "개관",
+)
+GUIDE_TIME_QUESTION_HINTS = ("오늘", "몇 시", "까지", "열어", "열어요", "닫", "오픈")
+GENERAL_HINTS = (
+    "안녕",
+    "안녕하세요",
+    "도와줘",
+    "궁금",
+    "문의하고 싶",
+    "뭘 물어봐야",
+    "모르겠어",
+)
+GENERAL_INQUIRY_PHRASES = ("문의하고 싶은", "문의가 있어")
+BOOK_FIELD_QUALIFIERS = ("저자", "작가", "출판사", "청구기호", "서가", "자료")
 
 
 @dataclass(frozen=True)
@@ -44,6 +82,11 @@ class RetrievalEvidence:
     guide_hits: int = 0
     book_keyword: str | None = None
     guide_keyword: str | None = None
+    book_probe_limit: int = 0
+    guide_probe_limit: int = 0
+    book_probe_location_question: bool = False
+    book_probe: Any | None = None
+    guide_probe: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -175,11 +218,31 @@ def extract_search_keyword(
     intent_config = config or load_intent_config()
     cleaned = message.strip()
     cleaned = re.sub(r"[?？!！.。]+$", "", cleaned).strip()
+    has_generic_book_term = _contains_any(cleaned, BOOK_GENERIC_TERMS)
 
     for phrase in sorted(intent_config.keyword_cleanup, key=len, reverse=True):
         cleaned = cleaned.replace(phrase, " ")
 
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,:;")
+
+    if intent in ("BOOK_SEARCH", "BOOK_LOCATION", "BOOK_RECOMMENDATION"):
+        original_cleaned = cleaned
+        if "말고" in cleaned:
+            cleaned = cleaned.rsplit("말고", 1)[-1].strip()
+        suffix_pattern = "|".join(re.escape(term) for term in BOOK_QUERY_SUFFIXES)
+        cleaned = re.sub(rf"\s*(?:{suffix_pattern})\s*$", "", cleaned).strip()
+        cleaned = re.sub(r"\s*(책|도서)[이가을를은는]?\s*$", "", cleaned).strip()
+        qualifier_pattern = "|".join(re.escape(term) for term in BOOK_FIELD_QUALIFIERS)
+        cleaned = re.sub(
+            rf"(?:\s+(?:{qualifier_pattern})[이가을를은는]?\s*)+$",
+            "",
+            cleaned,
+        ).strip()
+        for source, replacement in BOOK_TOPIC_SUFFIX_REWRITES:
+            cleaned = re.sub(rf"{re.escape(source)}$", replacement, cleaned).strip()
+        if not cleaned and has_generic_book_term:
+            return "책"
+
     return cleaned or message.strip()
 
 
@@ -189,9 +252,14 @@ def _score_rule(rule: IntentRule, normalized: str, evidence: RetrievalEvidence) 
     negative = tuple(keyword for keyword in rule.negative_keywords if keyword.lower() in normalized)
     raw_score = float(len(matched)) - (1.2 * len(negative))
 
-    evidence_bonus = _evidence_bonus(rule.intent, evidence)
-    priority_bonus = min(rule.priority / 100.0, 0.6)
-    adjusted = raw_score + evidence_bonus + priority_bonus
+    evidence_bonus = _evidence_bonus(rule.intent, evidence, normalized)
+    heuristic_bonus = _heuristic_bonus(rule.intent, normalized, evidence)
+    priority_bonus = (
+        min(rule.priority / 100.0, 0.6)
+        if matched or evidence_bonus > 0 or heuristic_bonus > 0
+        else 0.0
+    )
+    adjusted = raw_score + evidence_bonus + heuristic_bonus + priority_bonus
 
     if rule.intent == "LIBRARY_GENERAL" and adjusted <= 0:
         confidence = 0.4
@@ -210,17 +278,105 @@ def _score_rule(rule: IntentRule, normalized: str, evidence: RetrievalEvidence) 
             "negativeKeywords": list(negative),
             "bookHits": evidence.book_hits,
             "guideHits": evidence.guide_hits,
+            "heuristicBonus": round(heuristic_bonus, 3),
         },
     )
 
 
-def _evidence_bonus(intent: LibraryIntent, evidence: RetrievalEvidence) -> float:
+def _evidence_bonus(intent: LibraryIntent, evidence: RetrievalEvidence, normalized: str) -> float:
     """해당 저장소에 실제 검색 결과가 있으면 관련 intent 점수를 올린다."""
     if intent in ("BOOK_SEARCH", "BOOK_LOCATION", "BOOK_RECOMMENDATION") and evidence.book_hits:
         return 1.4
-    if intent in ("LIBRARY_GUIDE", "LIBRARY_GENERAL") and evidence.guide_hits:
-        return 1.4
+    if intent == "LIBRARY_GUIDE" and evidence.guide_hits:
+        return (
+            1.4
+            if _contains_any(normalized, GUIDE_SPECIFIC_TERMS + GUIDE_TIME_QUESTION_HINTS)
+            else 0.45
+        )
+    if intent == "LIBRARY_GENERAL" and evidence.guide_hits:
+        return 0.4
     return 0.0
+
+
+def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: RetrievalEvidence) -> float:
+    """규칙 사전만으로 놓치기 쉬운 경계 질문을 보정한다."""
+    bonus = 0.0
+    has_location_hint = _contains_any(normalized, LOCATION_HINTS)
+    has_book_hint = _contains_any(normalized, BOOK_HINTS)
+    has_recommendation_hint = _contains_any(normalized, RECOMMENDATION_HINTS)
+    has_generic_library_term = _contains_any(normalized, GENERIC_LIBRARY_TERMS)
+    has_guide_specific_term = _contains_any(normalized, GUIDE_SPECIFIC_TERMS)
+    has_guide_time_question = _contains_any(normalized, GUIDE_TIME_QUESTION_HINTS)
+    looks_general = _looks_like_general_message(normalized)
+    prefers_physical_book_search = (
+        "말고" in normalized and "전자책" in normalized and ("종이책" in normalized or "책" in normalized)
+    )
+    rejects_recommendation = "추천 말고" in normalized
+
+    if intent == "BOOK_SEARCH":
+        if _contains_any(normalized, BOOK_TOPIC_HINTS):
+            bonus += 1.2
+        if has_generic_library_term and has_book_hint:
+            bonus += 0.9
+        if has_location_hint:
+            bonus -= 0.85
+        if has_recommendation_hint and "말고" not in normalized:
+            bonus -= 0.7
+        if rejects_recommendation:
+            bonus += 1.0
+        if prefers_physical_book_search:
+            bonus += 1.8
+        if has_guide_specific_term and not has_book_hint:
+            bonus -= 0.8
+
+    if intent == "BOOK_LOCATION":
+        if has_location_hint:
+            bonus += 1.05
+        if has_location_hint and has_book_hint:
+            bonus += 0.55
+        if _contains_any(normalized, ("서가", "자료실", "청구기호")):
+            bonus += 0.35
+        if evidence.book_hits and has_location_hint:
+            bonus += 0.2
+
+    if intent == "BOOK_RECOMMENDATION":
+        if has_recommendation_hint and has_book_hint:
+            bonus += 1.45
+        if has_location_hint:
+            bonus -= 0.65
+        if rejects_recommendation and has_recommendation_hint:
+            bonus -= 1.35
+
+    if intent == "LIBRARY_GUIDE":
+        if has_guide_specific_term:
+            bonus += 0.8
+        if has_guide_time_question:
+            bonus += 0.7
+        if prefers_physical_book_search:
+            bonus -= 1.2
+        if _contains_any(normalized, GENERAL_INQUIRY_PHRASES) and not has_location_hint:
+            bonus -= 1.15
+        if has_generic_library_term and has_book_hint:
+            bonus -= 1.0
+        if looks_general:
+            bonus -= 1.1
+
+    if intent == "LIBRARY_GENERAL" and looks_general:
+        bonus += 1.6
+
+    return bonus
+
+
+def _contains_any(normalized: str, terms: tuple[str, ...]) -> bool:
+    return any(term in normalized for term in terms)
+
+
+def _looks_like_general_message(normalized: str) -> bool:
+    if _contains_any(normalized, GENERAL_INQUIRY_PHRASES):
+        return not _contains_any(normalized, BOOK_HINTS + LOCATION_HINTS)
+    if not _contains_any(normalized, GENERAL_HINTS):
+        return False
+    return not _contains_any(normalized, BOOK_HINTS + LOCATION_HINTS + GUIDE_SPECIFIC_TERMS)
 
 
 def _is_ambiguous(best: IntentScore, second: IntentScore | None) -> bool:

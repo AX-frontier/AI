@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from agents.library.models import BookRecord
 from agents.main_agent.models import MainChunkRecord
 from agents.orchestrator.routing.evidence import AgentEvidence, RoutingEvidence, RoutingEvidenceCollector
 from agents.orchestrator.routing.router import EvidenceBasedRouter
@@ -28,6 +29,43 @@ class RecordingMainRepository:
 
     def search_keyword_chunks(self, terms: list[str], *, limit: int = 5) -> list[MainChunkRecord]:
         self.keyword_limits.append(limit)
+        return []
+
+
+class RecordingLibraryRepository:
+    def __init__(self) -> None:
+        self.book_keywords: list[str] = []
+        self.guide_keywords: list[str] = []
+
+    def search_books(
+        self,
+        keyword: str,
+        limit: int = 5,
+        *,
+        location_question: bool = False,
+    ) -> list[BookRecord]:
+        self.book_keywords.append(keyword)
+        if keyword == "책":
+            return [
+                BookRecord(
+                    id=1,
+                    bib_no="BIB-001",
+                    reg_no="REG-001",
+                    title="책",
+                    author="저자",
+                    publisher="출판사",
+                    publish_year=2026,
+                    holding_call_no="001 ㅊ123ㅊ",
+                    material_type="단행본",
+                    location_symbol="LIB",
+                    stack_location="인문자연과학자료실",
+                    stack_shelf="1-A-1-a",
+                )
+            ]
+        return []
+
+    def search_guide_docs(self, keyword: str, limit: int = 3) -> list:
+        self.guide_keywords.append(keyword)
         return []
 
 
@@ -143,3 +181,16 @@ def test_main_evidence_returns_zero_when_main_retriever_has_no_hits() -> None:
     assert repository.similar_limits == [20]
     assert evidence.score == 0.0
     assert evidence.reason == "no main vector chunk hit"
+
+
+def test_library_evidence_uses_intent_aware_keyword_cleanup() -> None:
+    repository = RecordingLibraryRepository()
+
+    evidence = RoutingEvidenceCollector(
+        library_repository=repository,
+        embedding_provider=FixedEmbeddingProvider(),
+    )._collect_library_evidence("책 있어?")
+
+    assert repository.book_keywords[0] == "책"
+    assert evidence.score >= 0.7
+    assert "book search hits: 1" in evidence.reason

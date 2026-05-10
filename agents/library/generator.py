@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 
 from agents.library.api.schemas import LibraryChatResponse, LibraryIntent, LibrarySource, MatchedBook
@@ -182,18 +183,24 @@ def _book_to_response(book: BookRecord) -> MatchedBook:
     """DB의 snake_case 도서 필드를 Spring 응답용 camelCase 필드로 매핑한다."""
     return MatchedBook(
         id=book.id,
-        bibNo=book.bib_no,
-        regNo=book.reg_no,
-        title=book.title,
-        author=book.author,
-        publisher=book.publisher,
+        bibNo=_decode_text(book.bib_no),
+        regNo=_decode_text(book.reg_no),
+        title=_decode_text(book.title) or "",
+        author=_decode_text(book.author),
+        publisher=_decode_text(book.publisher),
         publishYear=book.publish_year,
-        holdingCallNo=book.holding_call_no,
-        materialType=book.material_type,
-        locationSymbol=book.location_symbol,
-        stackLocation=book.stack_location,
-        stackShelf=book.stack_shelf,
+        holdingCallNo=_decode_text(book.holding_call_no),
+        materialType=_decode_text(book.material_type),
+        locationSymbol=_decode_text(book.location_symbol),
+        stackLocation=_decode_text(book.stack_location),
+        stackShelf=_decode_text(book.stack_shelf),
     )
+
+
+def _decode_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return html.unescape(value)
 
 
 def _summarize_content(content: str, max_length: int = 280) -> str:

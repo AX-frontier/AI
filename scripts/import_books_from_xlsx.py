@@ -5,6 +5,8 @@ import openpyxl
 import psycopg2
 from psycopg2.extras import Json, execute_values
 
+from agents.library.normalization import build_book_search_text, normalize_book_search_text
+
 
 XLSX_PATH = os.path.expanduser("data/raw/books.xlsx")
 
@@ -41,6 +43,13 @@ INSERT_COLUMNS = [
     "stack_location",
     "stack_shelf",
     "isbn",
+    "title_normalized",
+    "author_normalized",
+    "publisher_normalized",
+    "holding_call_no_normalized",
+    "stack_location_normalized",
+    "stack_shelf_normalized",
+    "search_text_normalized",
     "raw_data",
 ]
 
@@ -105,6 +114,23 @@ def read_books_from_xlsx(path):
         if not book["reg_no"] or not book["title"]:
             continue
 
+        book["title_normalized"] = normalize_book_search_text(book["title"])
+        book["author_normalized"] = normalize_book_search_text(book["author"])
+        book["publisher_normalized"] = normalize_book_search_text(book["publisher"])
+        book["holding_call_no_normalized"] = normalize_book_search_text(book["holding_call_no"])
+        book["stack_location_normalized"] = normalize_book_search_text(book["stack_location"])
+        book["stack_shelf_normalized"] = normalize_book_search_text(book["stack_shelf"])
+        book["search_text_normalized"] = build_book_search_text(
+            title=book["title"],
+            author=book["author"],
+            publisher=book["publisher"],
+            holding_call_no=book["holding_call_no"],
+            material_type=book["material_type"],
+            location_symbol=book["location_symbol"],
+            stack_location=book["stack_location"],
+            stack_shelf=book["stack_shelf"],
+            isbn=book["isbn"],
+        )
         book["raw_data"] = Json(
             raw_data,
             dumps=lambda value: json.dumps(value, ensure_ascii=False, default=str),
@@ -133,6 +159,13 @@ def import_books(books):
             stack_location = EXCLUDED.stack_location,
             stack_shelf = EXCLUDED.stack_shelf,
             isbn = EXCLUDED.isbn,
+            title_normalized = EXCLUDED.title_normalized,
+            author_normalized = EXCLUDED.author_normalized,
+            publisher_normalized = EXCLUDED.publisher_normalized,
+            holding_call_no_normalized = EXCLUDED.holding_call_no_normalized,
+            stack_location_normalized = EXCLUDED.stack_location_normalized,
+            stack_shelf_normalized = EXCLUDED.stack_shelf_normalized,
+            search_text_normalized = EXCLUDED.search_text_normalized,
             raw_data = EXCLUDED.raw_data,
             updated_at = now()
     """

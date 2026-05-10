@@ -22,11 +22,58 @@ class RecordingLLMClient:
 
 
 @dataclass
+class CountingLibraryRepository:
+    books: list[BookRecord]
+    guides: list[GuideDocRecord]
+    search_books_calls: int = 0
+    search_guide_docs_calls: int = 0
+
+    def search_books(
+        self,
+        keyword: str,
+        limit: int = 5,
+        *,
+        location_question: bool = False,
+    ) -> list[BookRecord]:
+        self.search_books_calls += 1
+        normalized = keyword.lower()
+        results = []
+        for book in self.books:
+            fields = [
+                book.title,
+                book.author,
+                book.publisher,
+                book.holding_call_no,
+                book.stack_location,
+                book.stack_shelf,
+            ]
+            if any(normalized in (field or "").lower() for field in fields):
+                results.append(book)
+        return results[:limit]
+
+    def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
+        self.search_guide_docs_calls += 1
+        normalized = keyword.lower()
+        results = [
+            guide
+            for guide in self.guides
+            if normalized in guide.title.lower() or normalized in guide.content.lower()
+        ]
+        return results[:limit]
+
+
+@dataclass
 class MockLibraryRepository:
     books: list[BookRecord]
     guides: list[GuideDocRecord]
 
-    def search_books(self, keyword: str, limit: int = 5) -> list[BookRecord]:
+    def search_books(
+        self,
+        keyword: str,
+        limit: int = 5,
+        *,
+        location_question: bool = False,
+    ) -> list[BookRecord]:
         normalized = keyword.lower()
         results = []
         for book in self.books:
@@ -212,6 +259,63 @@ def test_book_search_ignores_injected_llm_client() -> None:
     assert llm_client.prompts == []
 
 
+def test_book_response_decodes_html_entities_in_location_fields() -> None:
+    response = run_library_agent(
+        make_request("디자인 테스트 어디 있어?"),
+        MockLibraryRepository(
+            books=[
+                BookRecord(
+                    id=3,
+                    bib_no="BIB-003",
+                    reg_no="REG-003",
+                    title="디자인 테스트",
+                    author="김디자인",
+                    publisher="한성출판",
+                    publish_year=2026,
+                    holding_call_no="600 ㄱ123ㄷ",
+                    material_type="단행본",
+                    location_symbol="도서자료",
+                    stack_location="Design&amp;IT정보센터(6F)",
+                    stack_shelf="10-A-5-b",
+                )
+            ],
+            guides=[],
+        ),
+    )
+
+    assert "Design&IT정보센터(6F)" in response.answer
+    assert response.matchedBooks[0].stackLocation == "Design&IT정보센터(6F)"
+    assert "&amp;" not in response.answer
+
+
+def test_book_search_reuses_evidence_probe_when_keyword_is_unchanged() -> None:
+    base = make_repository()
+    repo = CountingLibraryRepository(books=base.books, guides=base.guides)
+
+    response = run_library_agent(make_request("파이썬 도서 검색"), repo)
+
+    assert response.intent == "BOOK_SEARCH"
+    assert response.resultCount == 1
+    assert repo.search_books_calls == 1
+    assert repo.search_guide_docs_calls == 1
+
+
+def test_guide_search_reuses_evidence_probe_when_keyword_is_unchanged() -> None:
+    base = make_repository()
+    repo = CountingLibraryRepository(books=base.books, guides=base.guides)
+
+    response = run_library_agent(
+        make_request("학술정보관 운영 시간 알려줘"),
+        repo,
+        llm_client=MockLLMClient("학술정보관은 평일 09:00부터 21:00까지 운영합니다."),
+    )
+
+    assert response.intent == "LIBRARY_GUIDE"
+    assert response.fallbackUsed is False
+    assert repo.search_books_calls == 1
+    assert repo.search_guide_docs_calls == 1
+
+
 def test_guide_without_search_result_does_not_call_llm() -> None:
     llm_client = RecordingLLMClient()
 
@@ -305,7 +409,13 @@ def test_semantic_guide_hit_answers_when_exact_keyword_does_not_match(monkeypatc
             return [0.1] * 384
 
     class SemanticGuideRepository:
-        def search_books(self, keyword: str, limit: int = 5) -> list[BookRecord]:
+        def search_books(
+            self,
+            keyword: str,
+            limit: int = 5,
+            *,
+            location_question: bool = False,
+        ) -> list[BookRecord]:
             return []
 
         def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
@@ -428,6 +538,156 @@ def test_guide_retriever_dedupes_keyword_and_semantic_chunks_by_score() -> None:
     assert result.docs[0].title == "반납 안내"
 
 
+def test_guide_retriever_reuses_query_embedding_for_same_keyword() -> None:
+    class CountingEmbeddingProvider:
+        dimensions = 384
+
+        def __init__(self) -> None:
+            self.query_calls = 0
+
+        def embed_query(self, text: str) -> list[float]:
+            self.query_calls += 1
+            return [0.3] * 384
+
+        def embed_document(self, text: str) -> list[float]:
+            return [0.3] * 384
+
+    class EmbeddingOnlyGuideRepository:
+        def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
+            return []
+
+        def search_guide_chunks_by_keyword(
+            self,
+            keyword: str,
+            *,
+            limit: int = 12,
+        ) -> list[GuideChunkRecord]:
+            return []
+
+        def search_guide_chunks_by_embedding(
+            self,
+            query_embedding: list[float],
+            *,
+            limit: int = 12,
+            min_score: float = 0.35,
+        ) -> list[GuideChunkRecord]:
+            return [
+                GuideChunkRecord(
+                    id=201,
+                    guide_doc_id=20,
+                    title="운영 시간",
+                    source_url="https://library.example.edu/hours",
+                    content="학술정보관은 평일 09:00부터 21:00까지 운영합니다.",
+                    chunk_index=0,
+                    score=0.82,
+                )
+            ]
+
+    provider = CountingEmbeddingProvider()
+    retriever = GuideRetriever(
+        EmbeddingOnlyGuideRepository(),
+        embedding_provider=provider,
+    )
+
+    first = retriever.retrieve("오늘 몇 시까지 열어요?", limit=1)
+    second = retriever.retrieve("오늘 몇 시까지 열어요?", limit=3)
+
+    assert first.docs[0].title == "운영 시간"
+    assert second.docs[0].title == "운영 시간"
+    assert provider.query_calls == 1
+
+
+def test_guide_reranking_prefers_section_match_over_table_heavy_chunk() -> None:
+    class SectionAwareRepository:
+        def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
+            return []
+
+        def search_guide_chunks_by_keyword(
+            self,
+            keyword: str,
+            *,
+            limit: int = 12,
+        ) -> list[GuideChunkRecord]:
+            return [
+                GuideChunkRecord(
+                    id=301,
+                    guide_doc_id=30,
+                    title="열람실 좌석 이용",
+                    source_url="https://library.example.edu/seats-table",
+                    content=(
+                        "문서 제목: 열람실 좌석 이용\n"
+                        "| 구분 | 시간 | 비고 |\n"
+                        "|---|---|---|\n"
+                        "| 좌석 | 09:00 | 현장 |\n"
+                        "| 좌석 | 10:00 | 현장 |\n"
+                        "| 좌석 | 11:00 | 현장 |"
+                    ),
+                    chunk_index=0,
+                    score=0.84,
+                ),
+                GuideChunkRecord(
+                    id=302,
+                    guide_doc_id=31,
+                    title="열람실 좌석 예약 안내",
+                    source_url="https://library.example.edu/seats-guide",
+                    content=(
+                        "문서 제목: 열람실 좌석 예약 안내\n"
+                        "섹션: 좌석 예약 방법\n"
+                        "열람실 좌석은 예약 후 이용할 수 있으며, 좌석 예약 화면에서 시간대를 선택합니다."
+                    ),
+                    chunk_index=0,
+                    score=0.8,
+                ),
+            ]
+
+    result = GuideRetriever(SectionAwareRepository()).retrieve("좌석 예약 어떻게 해?", limit=3)
+
+    assert result.chunks[0].id == 302
+    assert "예약" in result.chunks[0].content
+
+
+def test_guide_reranking_penalizes_stub_chunk_for_explanatory_result() -> None:
+    class StubPenaltyRepository:
+        def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
+            return []
+
+        def search_guide_chunks_by_keyword(
+            self,
+            keyword: str,
+            *,
+            limit: int = 12,
+        ) -> list[GuideChunkRecord]:
+            return [
+                GuideChunkRecord(
+                    id=401,
+                    guide_doc_id=40,
+                    title="전자자료 안내",
+                    source_url="https://library.example.edu/e-short",
+                    content="전자자료 안내 바로가기",
+                    chunk_index=0,
+                    score=0.83,
+                ),
+                GuideChunkRecord(
+                    id=402,
+                    guide_doc_id=41,
+                    title="전자자료 이용 안내",
+                    source_url="https://library.example.edu/e-long",
+                    content=(
+                        "문서 제목: 전자자료 이용 안내\n"
+                        "섹션: 전자자료 이용 방법\n"
+                        "전자자료는 교외 접속 인증 후 DB 목록에서 선택해 이용할 수 있습니다."
+                    ),
+                    chunk_index=0,
+                    score=0.79,
+                ),
+            ]
+
+    result = GuideRetriever(StubPenaltyRepository()).retrieve("전자자료 어디서 이용해?", limit=3)
+
+    assert result.chunks[0].id == 402
+    assert "교외 접속" in result.chunks[0].content
+
+
 def test_library_word_does_not_force_book_search_for_guide_question() -> None:
     response = run_library_agent(make_request("도서관 운영 시간 알려줘"), make_repository())
 
@@ -442,6 +702,49 @@ def test_no_search_results_returns_fallback() -> None:
     assert response.fallbackReason == "검색 조건과 일치하는 도서를 찾지 못했습니다."
     assert response.resultCount == 0
     assert response.matchedBooks == []
+
+
+def make_clean_code_repository() -> MockLibraryRepository:
+    return MockLibraryRepository(
+        books=[
+            BookRecord(
+                id=3,
+                bib_no="BIB-003",
+                reg_no="REG-003",
+                title="클린 코드",
+                author="로버트 마틴",
+                publisher="인사이트",
+                publish_year=2013,
+                holding_call_no="005.133 ㅁ123ㅋ",
+                material_type="단행본",
+                location_symbol="LIB",
+                stack_location="제1자료실",
+                stack_shelf="A-05",
+            )
+        ],
+        guides=[],
+    )
+
+
+def test_book_location_with_book_suffix_in_keyword_finds_book() -> None:
+    response = run_library_agent(make_request("클린 코드 책 어디 있어?"), make_clean_code_repository())
+
+    assert response.intent == "BOOK_LOCATION"
+    assert response.resultCount == 1
+    assert response.matchedBooks[0].title == "클린 코드"
+    assert response.fallbackUsed is False
+    assert response.searchKeyword == "클린 코드"
+
+
+def test_book_location_book_suffix_probe_is_reused() -> None:
+    base = make_clean_code_repository()
+    repo = CountingLibraryRepository(books=base.books, guides=base.guides)
+
+    response = run_library_agent(make_request("클린 코드 책 어디 있어?"), repo)
+
+    assert response.intent == "BOOK_LOCATION"
+    assert response.resultCount == 1
+    assert repo.search_books_calls == 1
 
 
 def test_response_field_names_match_spring_contract() -> None:
