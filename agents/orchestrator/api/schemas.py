@@ -62,6 +62,23 @@ class OrchestratorFallbackResponse(BaseModel):
     fallbackReason: str
 
 
+class DocumentReviewInputRequiredResponse(BaseModel):
+    """문서검토 의도는 확인됐지만 실제 검토 본문 입력이 더 필요한 상태."""
+
+    targetAgent: Literal["DOCUMENT_REVIEW"] = "DOCUMENT_REVIEW"
+    intent: Literal["DOCUMENT_REVIEW_REQUIRED"] = "DOCUMENT_REVIEW_REQUIRED"
+    answer: str = "검토할 전자결재 문서 본문을 입력해주세요."
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    confidence: float
+    fallbackUsed: bool = False
+    fallbackReason: str | None = None
+    requiresDocumentInput: bool = True
+
+
 OrchestratorChatResponse = (
-    MainChatResponse | LibraryChatResponse | DocumentReviewResponse | OrchestratorFallbackResponse
+    MainChatResponse
+    | LibraryChatResponse
+    | DocumentReviewResponse
+    | DocumentReviewInputRequiredResponse
+    | OrchestratorFallbackResponse
 )
