@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
+from agents.document_review.routing import collect_document_review_evidence
 from agents.library.classifier import classify_intent, extract_search_keyword
 from agents.library.repository import LibraryRepository, get_library_repository
 from agents.library.retrieval import BookRetriever, GuideRetriever, collect_retrieval_evidence
@@ -80,41 +80,5 @@ class RoutingEvidenceCollector:
         )
 
     def _collect_document_review_evidence(self, message: str) -> AgentEvidence:
-        # TODO(dev-B integration): Document Review Agent의 route/classifier API가
-        # 확정되면 이 임시 키워드 기반 evidence를 제거하고 B API 응답의
-        # confidence/reason을 사용한다. 현재는 B 담당 구현이 아직 없어서
-        # v0.2 라우팅 테스트용으로만 사용한다.
-        normalized = message.lower()
-        matched = [keyword for keyword in DOCUMENT_REVIEW_KEYWORDS if keyword in normalized]
-        if not matched:
-            return AgentEvidence(score=0.0, reason="no document review keyword")
-
-        # Temporary heuristic score, not model-based confidence:
-        # 1 keyword ~= 0.60, 2 keywords ~= 0.75, capped at 0.95.
-        score = min(0.95, 0.45 + (0.15 * len(matched)))
-        if _looks_like_review_command(normalized):
-            score = max(score, 0.75)
-        return AgentEvidence(
-            score=round(score, 3),
-            reason=f"matched document review keywords: {', '.join(matched)}",
-        )
-
-
-# Temporary fallback keywords for Document Review routing.
-# Replace with Document Review Agent evidence API when developer B endpoint is ready.
-DOCUMENT_REVIEW_KEYWORDS = (
-    "문서",
-    "전자결재",
-    "공문",
-    "검토",
-    "수정",
-    "두문",
-    "본문",
-    "결문",
-    "맞춤법",
-    "문장",
-)
-
-
-def _looks_like_review_command(message: str) -> bool:
-    return bool(re.search(r"(검토|수정|확인|고쳐|봐줘|봐 줘)", message))
+        evidence = collect_document_review_evidence(message)
+        return AgentEvidence(score=evidence.score, reason=evidence.reason)

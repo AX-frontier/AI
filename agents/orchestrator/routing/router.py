@@ -23,6 +23,13 @@ class EvidenceBasedRouter:
     """Evidence 점수와 안전 우선순위로 targetAgent를 결정한다."""
 
     def route(self, evidence: RoutingEvidence) -> RouteDecision:
+        if evidence.document_review.score >= 0.85:
+            return _decision_for(
+                "DOCUMENT_REVIEW",
+                evidence,
+                "explicit document review evidence selected",
+            )
+
         candidates = [
             ("DOCUMENT_REVIEW", evidence.document_review.score, DOCUMENT_REVIEW_THRESHOLD),
             ("LIBRARY", evidence.library.score, LIBRARY_THRESHOLD),

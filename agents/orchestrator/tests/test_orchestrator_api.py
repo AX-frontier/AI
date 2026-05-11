@@ -105,6 +105,35 @@ def test_orchestrator_route_endpoint_returns_document_review_for_review_query() 
     assert payload["evidence"]["documentReviewScore"] == 0.75
 
 
+def test_orchestrator_route_endpoint_prioritizes_explicit_document_review() -> None:
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.862, reason="main weak hit"),
+            library=AgentEvidence(score=0.98, reason="library false positive"),
+            document_review=AgentEvidence(score=0.85, reason="document review hit"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/route",
+        json={
+            "queryUid": "q_005",
+            "traceId": "tr_005",
+            "conversationUid": "conv_001",
+            "message": "기안할 문서가 있는데 검토해줄 수 있어?",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "DOCUMENT_REVIEW"
+    assert payload["intent"] == "DOCUMENT_REVIEW"
+    assert payload["evidence"]["documentReviewScore"] == 0.85
+
+
 def test_orchestrator_route_endpoint_returns_fallback_for_unrelated_query() -> None:
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(

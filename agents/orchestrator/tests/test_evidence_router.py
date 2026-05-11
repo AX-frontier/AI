@@ -82,6 +82,20 @@ def test_routes_to_document_review_when_document_score_is_high() -> None:
     assert decision.intent == "DOCUMENT_REVIEW"
 
 
+def test_explicit_document_review_beats_higher_library_score() -> None:
+    decision = EvidenceBasedRouter().route(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.86, reason="main hit"),
+            library=AgentEvidence(score=0.98, reason="library false positive"),
+            document_review=AgentEvidence(score=0.85, reason="explicit document review hit"),
+        )
+    )
+
+    assert decision.target_agent == "DOCUMENT_REVIEW"
+    assert decision.intent == "DOCUMENT_REVIEW"
+    assert decision.reason.startswith("explicit document review evidence selected")
+
+
 def test_routes_to_library_when_library_score_is_high() -> None:
     decision = EvidenceBasedRouter().route(
         RoutingEvidence(
@@ -194,3 +208,12 @@ def test_library_evidence_uses_intent_aware_keyword_cleanup() -> None:
     assert repository.book_keywords[0] == "책"
     assert evidence.score >= 0.7
     assert "book search hits: 1" in evidence.reason
+
+
+def test_document_review_evidence_comes_from_document_review_classifier() -> None:
+    evidence = RoutingEvidenceCollector(
+        embedding_provider=FixedEmbeddingProvider(),
+    )._collect_document_review_evidence("전자결재 문서를 수정해줘")
+
+    assert evidence.score >= 0.75
+    assert "matched document review keywords" in evidence.reason

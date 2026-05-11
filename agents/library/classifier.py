@@ -248,7 +248,7 @@ def extract_search_keyword(
 
 def _score_rule(rule: IntentRule, normalized: str, evidence: RetrievalEvidence) -> IntentScore:
     """현재 메시지에 대해 intent 규칙 하나를 숫자 점수로 변환한다."""
-    matched = tuple(keyword for keyword in rule.keywords if keyword.lower() in normalized)
+    matched = _matched_keywords(rule.keywords, normalized)
     negative = tuple(keyword for keyword in rule.negative_keywords if keyword.lower() in normalized)
     raw_score = float(len(matched)) - (1.2 * len(negative))
 
@@ -301,7 +301,7 @@ def _evidence_bonus(intent: LibraryIntent, evidence: RetrievalEvidence, normaliz
 def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: RetrievalEvidence) -> float:
     """규칙 사전만으로 놓치기 쉬운 경계 질문을 보정한다."""
     bonus = 0.0
-    has_location_hint = _contains_any(normalized, LOCATION_HINTS)
+    has_location_hint = _has_location_hint(normalized)
     has_book_hint = _contains_any(normalized, BOOK_HINTS)
     has_recommendation_hint = _contains_any(normalized, RECOMMENDATION_HINTS)
     has_generic_library_term = _contains_any(normalized, GENERIC_LIBRARY_TERMS)
@@ -371,12 +371,53 @@ def _contains_any(normalized: str, terms: tuple[str, ...]) -> bool:
     return any(term in normalized for term in terms)
 
 
+def _matched_keywords(keywords: tuple[str, ...], normalized: str) -> tuple[str, ...]:
+    matched = []
+    for keyword in keywords:
+        normalized_keyword = keyword.lower()
+        if normalized_keyword not in normalized:
+            continue
+        if normalized_keyword == "서가" and not _is_valid_shelf_keyword(normalized):
+            continue
+        matched.append(keyword)
+    return tuple(matched)
+
+
+def _has_location_hint(normalized: str) -> bool:
+    terms_without_shelf = tuple(term for term in LOCATION_HINTS if term != "서가")
+    return _contains_any(normalized, terms_without_shelf) or _is_valid_shelf_keyword(normalized)
+
+
+def _is_valid_shelf_keyword(normalized: str) -> bool:
+    """문서가/문서가요 내부의 '서가' 오탐을 피하고 실제 서가 문맥만 인정한다."""
+    if not re.search(r"(?<!문)서가", normalized):
+        return False
+    shelf_context_terms = (
+        "책",
+        "도서",
+        "자료실",
+        "청구기호",
+        "위치",
+        "어디",
+        "소장",
+        "층",
+        "도서관",
+        "학술정보관",
+    )
+    return _contains_any(normalized, shelf_context_terms) or bool(
+        re.search(r"\b\d+[ -]?[a-z]-\d+", normalized)
+    )
+
+
 def _looks_like_general_message(normalized: str) -> bool:
     if _contains_any(normalized, GENERAL_INQUIRY_PHRASES):
-        return not _contains_any(normalized, BOOK_HINTS + LOCATION_HINTS)
+        return not (_contains_any(normalized, BOOK_HINTS) or _has_location_hint(normalized))
     if not _contains_any(normalized, GENERAL_HINTS):
         return False
-    return not _contains_any(normalized, BOOK_HINTS + LOCATION_HINTS + GUIDE_SPECIFIC_TERMS)
+    return not (
+        _contains_any(normalized, BOOK_HINTS + GUIDE_SPECIFIC_TERMS)
+        or _has_location_hint(normalized)
+    )
 
 
 def _is_ambiguous(best: IntentScore, second: IntentScore | None) -> bool:

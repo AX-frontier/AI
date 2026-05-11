@@ -92,6 +92,32 @@ def test_shelf_question_prefers_book_location() -> None:
     assert result.intent == "BOOK_LOCATION"
 
 
+def test_document_review_phrase_does_not_match_shelf_keyword() -> None:
+    scores = score_intents("문서가 있는데 검토해줘", RetrievalEvidence(guide_hits=1))
+    location = next(score for score in scores if score.intent == "BOOK_LOCATION")
+
+    assert "서가" not in location.matched_keywords
+    assert location.confidence < 0.7
+
+
+def test_book_shelf_question_still_prefers_book_location() -> None:
+    result = classify_intent(
+        "파이썬 책 서가 어디야?",
+        evidence=RetrievalEvidence(book_hits=1),
+    )
+
+    assert result.intent == "BOOK_LOCATION"
+
+
+def test_library_shelf_location_question_still_prefers_book_location() -> None:
+    result = classify_intent(
+        "자료실 서가 위치 알려줘",
+        evidence=RetrievalEvidence(book_hits=1),
+    )
+
+    assert result.intent == "BOOK_LOCATION"
+
+
 def test_library_book_location_question_prefers_book_location() -> None:
     result = classify_intent(
         "도서관에 파이썬 책 어디 있어?",
