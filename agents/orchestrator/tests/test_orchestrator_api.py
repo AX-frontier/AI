@@ -337,7 +337,7 @@ def test_orchestrator_chat_endpoint_executes_document_review_agent() -> None:
     assert payload["status"] == "COMPLETED"
 
 
-def test_orchestrator_chat_endpoint_returns_fallback_when_document_body_missing() -> None:
+def test_orchestrator_chat_endpoint_requests_document_input_when_document_body_missing() -> None:
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.2, reason="weak main"),
@@ -361,9 +361,11 @@ def test_orchestrator_chat_endpoint_returns_fallback_when_document_body_missing(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["targetAgent"] == "FALLBACK"
-    assert payload["fallbackUsed"] is True
-    assert "document-review를 실행할 수 없습니다" in payload["fallbackReason"]
+    assert payload["targetAgent"] == "DOCUMENT_REVIEW"
+    assert payload["intent"] == "DOCUMENT_REVIEW_REQUIRED"
+    assert payload["requiresDocumentInput"] is True
+    assert payload["fallbackUsed"] is False
+    assert "문서 본문" in payload["answer"]
 
 
 def test_orchestrator_chat_endpoint_returns_fallback_for_unrelated_query() -> None:

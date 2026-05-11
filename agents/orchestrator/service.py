@@ -11,6 +11,7 @@ from agents.main_agent.embedding import EmbeddingProvider
 from agents.main_agent.llm.base import LLMClient
 from agents.main_agent.repository import MainChunkRepository
 from agents.orchestrator.api.schemas import (
+    DocumentReviewInputRequiredResponse,
     OrchestratorChatRequest,
     OrchestratorChatResponse,
     OrchestratorFallbackResponse,
@@ -101,9 +102,7 @@ def execute_routed_query(
 
     if route_result.targetAgent == "DOCUMENT_REVIEW":
         if request.document is None or not request.document.bodyText.strip():
-            return _build_fallback_response(
-                "문서 검토 대상 본문이 없어 document-review를 실행할 수 없습니다."
-            )
+            return _build_document_review_input_required_response(route_result.confidence)
         return run_document_review_agent(
             DocumentReviewRequest(
                 queryUid=request.queryUid,
@@ -122,3 +121,7 @@ def _build_fallback_response(reason: str) -> OrchestratorFallbackResponse:
         answer=reason,
         fallbackReason=reason,
     )
+
+
+def _build_document_review_input_required_response(confidence: float) -> DocumentReviewInputRequiredResponse:
+    return DocumentReviewInputRequiredResponse(confidence=confidence)
