@@ -164,6 +164,27 @@ def _build_guide_sources(context: GuideContext) -> list[LibrarySource]:
     return sources
 
 
+def build_guide_response_with_answer(
+    intent: LibraryIntent,
+    context: GuideContext,
+    confidence: float,
+    answer: str,
+) -> LibraryChatResponse:
+    """스트리밍으로 생성된 answer 문자열로 guide 응답을 조립한다."""
+    sources = _build_guide_sources(context)
+    return LibraryChatResponse(
+        intent=intent,
+        answer=answer,
+        sources=sources,
+        confidence=max(confidence, 0.75),
+        fallbackUsed=False,
+        fallbackReason=None,
+        searchKeyword=context.keyword,
+        resultCount=0,
+        matchedBooks=[],
+    )
+
+
 def build_fallback_response(intent: LibraryIntent, keyword: str, reason: str) -> LibraryChatResponse:
     """검색으로 답변하지 못했을 때 일관된 fallback 응답을 반환한다."""
     return LibraryChatResponse(

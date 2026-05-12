@@ -5,7 +5,7 @@ from typing import Iterator
 
 from agents.document_review.agent import run_document_review_agent
 from agents.document_review.api.schemas import DocumentReviewRequest
-from agents.library.agent import run_library_agent
+from agents.library.agent import run_library_agent, run_library_agent_stream
 from agents.library.api.schemas import LibraryChatRequest
 from agents.library.repository import LibraryRepository
 from agents.main_agent.agent import run_main_agent
@@ -182,7 +182,22 @@ def stream_orchestrator_chat(
         yield f"data: {json.dumps({'type': 'done', 'targetAgent': 'MAIN', 'intent': 'SCHOOL_NOTICE_QA', 'answer': final_answer, 'sources': [s.model_dump() for s in sources], 'confidence': round(max(0.5, min(0.95, result.chunks[0].score)), 3), 'fallbackUsed': False, 'fallbackReason': None, 'searchKeyword': result.keyword, 'resultCount': len(result.chunks), 'requiresDocumentInput': False})}\n\n"
         return
 
-    # MAIN이 아닌 경우: 기존 동기 실행 후 done 이벤트로 전송
+    if route_result.targetAgent == "LIBRARY":
+        llm = main_llm_client or get_llm_client()
+        for event in run_library_agent_stream(
+            LibraryChatRequest.model_construct(
+                queryUid=request.queryUid,
+                traceId=request.traceId,
+                conversationUid=request.conversationUid,
+                message=request.message,
+            ),
+            repository=library_repository,
+            llm_client=llm,
+        ):
+            yield f"data: {json.dumps(event)}\n\n"
+        return
+
+    # DOCUMENT_REVIEW 및 나머지 케이스: 동기 실행 후 chunk + done 이벤트로 전송
     response = execute_routed_query(
         request,
         evidence_collector=evidence_collector,
