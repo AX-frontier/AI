@@ -25,6 +25,15 @@ DOCUMENT_REVIEW_KEYWORDS = (
     "문장",
 )
 
+# 시스템 사용법·절차를 묻는 맥락을 걸러낸다 (문서 검토 요청이 아님)
+DOCUMENT_REVIEW_NEGATIVE_KEYWORDS = (
+    "방법",
+    "절차",
+    "어떻게",
+)
+
+NEGATIVE_PENALTY = 0.20
+
 
 def collect_document_review_evidence(message: str) -> DocumentReviewEvidence:
     """문서 검토 실행 없이 라우팅용 처리 가능성만 판단한다."""
@@ -38,10 +47,15 @@ def collect_document_review_evidence(message: str) -> DocumentReviewEvidence:
         score = max(score, 0.85)
     if _looks_like_review_command(normalized):
         score = max(score, 0.75)
-    return DocumentReviewEvidence(
-        score=round(score, 3),
-        reason=f"matched document review keywords: {', '.join(matched)}",
-    )
+
+    negative_matched = [kw for kw in DOCUMENT_REVIEW_NEGATIVE_KEYWORDS if kw in normalized]
+    if negative_matched:
+        score = max(0.0, score - NEGATIVE_PENALTY * len(negative_matched))
+
+    reason = f"matched document review keywords: {', '.join(matched)}"
+    if negative_matched:
+        reason += f"; negative keywords: {', '.join(negative_matched)}"
+    return DocumentReviewEvidence(score=round(score, 3), reason=reason)
 
 
 def _looks_like_review_command(message: str) -> bool:
