@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from agents.document_review.routing import collect_document_review_evidence
@@ -38,12 +39,27 @@ class RoutingEvidenceCollector:
         self._library_repository = library_repository
         self._embedding_provider = embedding_provider or get_embedding_provider()
 
+    # 라우터의 명시적 DOCUMENT_REVIEW 선택 기준과 동일한 값
+    _DOCUMENT_REVIEW_FAST_PATH_SCORE = 0.85
+
     def collect(self, message: str) -> RoutingEvidence:
         text = message.strip()
+        doc_evidence = self._collect_document_review_evidence(text)
+        if doc_evidence.score >= self._DOCUMENT_REVIEW_FAST_PATH_SCORE:
+            return RoutingEvidence(
+                main=AgentEvidence(score=0.0, reason="skipped: document review fast path"),
+                library=AgentEvidence(score=0.0, reason="skipped: document review fast path"),
+                document_review=doc_evidence,
+            )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            future_main = pool.submit(self._collect_main_evidence, text)
+            future_lib  = pool.submit(self._collect_library_evidence, text)
+            main_evidence    = future_main.result()
+            library_evidence = future_lib.result()
         return RoutingEvidence(
-            main=self._collect_main_evidence(text),
-            library=self._collect_library_evidence(text),
-            document_review=self._collect_document_review_evidence(text),
+            main=main_evidence,
+            library=library_evidence,
+            document_review=doc_evidence,
         )
 
     def _collect_main_evidence(self, message: str) -> AgentEvidence:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterator
 
 from agents.library.api.schemas import LibraryChatRequest, LibraryChatResponse
 from agents.library.classifier import IntentClassification, classify_intent, extract_search_keyword
@@ -88,6 +89,90 @@ def run_library_agent(
         else "관련 안내 문서를 찾지 못했습니다."
     )
     return build_fallback_response(classification.intent, keyword, fallback_reason)
+
+
+def run_library_agent_stream(
+    request: LibraryChatRequest,
+    repository: LibraryRepository | None = None,
+    llm_client: LLMClient | None = None,
+) -> Iterator[dict]:
+    """Library 에이전트를 streaming 모드로 실행한다.
+
+    Yields:
+        {'type': 'chunk', 'text': str} — LLM 응답 토큰 또는 완성된 답변
+        {'type': 'done', ...} — 최종 응답 필드 (model_dump() 전개)
+    """
+    from agents.library.generator import (
+        build_book_response,
+        build_fallback_response,
+        build_guide_response,
+        build_guide_response_with_answer,
+        _build_guide_answer_prompt,
+        _compose_guide_answer,
+    )
+
+    repo = repository or get_library_repository()
+    book_retriever = BookRetriever(repo)
+    guide_retriever = GuideRetriever(repo)
+
+    message = request.message.strip()
+    initial_classification = classify_intent(message)
+    provisional_keyword = extract_search_keyword(message, initial_classification.intent)
+    evidence = collect_retrieval_evidence(
+        provisional_keyword,
+        book_retriever=book_retriever,
+        guide_retriever=guide_retriever,
+        book_probe_limit=_book_probe_limit(initial_classification.intent),
+        guide_probe_limit=_guide_probe_limit(initial_classification.intent),
+        book_location_question=initial_classification.intent == "BOOK_LOCATION",
+        include_probe_results=True,
+    )
+    classification = classify_intent(message, evidence=evidence)
+    keyword = extract_search_keyword(message, classification.intent)
+
+    if classification.intent in ("BOOK_SEARCH", "BOOK_LOCATION", "BOOK_RECOMMENDATION"):
+        location_question = classification.intent == "BOOK_LOCATION"
+        books = _reuse_book_probe(
+            evidence, keyword, required_limit=5, location_question=location_question
+        ) or book_retriever.retrieve(keyword, location_question=location_question)
+        response = build_book_response(classification.intent, books, classification.confidence)
+        yield {"type": "done", **response.model_dump()}
+        return
+
+    guide_result = _reuse_guide_probe(evidence, keyword, required_limit=3) or guide_retriever.retrieve(keyword)
+    llm_policy = decide_library_llm_policy(classification, guide_result)
+
+    if guide_result.docs:
+        context = guide_retriever.build_context(guide_result)
+        if llm_policy.use_answer_llm and llm_client:
+            prompt = _build_guide_answer_prompt(context)
+            accumulated = ""
+            try:
+                for chunk_text in llm_client.generate_stream(prompt):
+                    accumulated += chunk_text
+                    yield {"type": "chunk", "text": chunk_text}
+            except Exception:
+                primary_chunk = context.chunks[0] if context.chunks else None
+                primary = context.docs[0]
+                fallback_title = primary_chunk.title if primary_chunk else primary.title
+                fallback_content = primary_chunk.content if primary_chunk else primary.content
+                accumulated = _compose_guide_answer(fallback_title, fallback_content)
+                yield {"type": "chunk", "text": accumulated}
+            response = build_guide_response_with_answer(
+                classification.intent, context, classification.confidence, accumulated
+            )
+        else:
+            response = build_guide_response(classification.intent, context, classification.confidence, llm_client=None)
+        yield {"type": "done", **response.model_dump()}
+        return
+
+    fallback_reason = (
+        "관련 학술정보관 안내 문서를 찾지 못했습니다."
+        if classification.intent == "LIBRARY_GUIDE"
+        else "관련 안내 문서를 찾지 못했습니다."
+    )
+    response = build_fallback_response(classification.intent, keyword, fallback_reason)
+    yield {"type": "done", **response.model_dump()}
 
 
 def decide_library_llm_policy(

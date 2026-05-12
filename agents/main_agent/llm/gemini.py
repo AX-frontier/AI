@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Iterator
 
 
 class GeminiLLMClient:
@@ -24,3 +25,12 @@ class GeminiLLMClient:
         if not text:
             raise RuntimeError("Gemini response did not include text.")
         return text.strip()
+
+    def generate_stream(self, prompt: str) -> Iterator[str]:
+        for chunk in self._client.models.generate_content_stream(
+            model=self.model,
+            contents=prompt,
+        ):
+            text = getattr(chunk, "text", None)
+            if text:
+                yield text

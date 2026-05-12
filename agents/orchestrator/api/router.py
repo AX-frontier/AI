@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 
 from agents.library.api.router import get_library_repository
 from agents.library.repository import LibraryRepository
@@ -15,7 +16,7 @@ from agents.orchestrator.api.schemas import (
     OrchestratorRouteResponse,
 )
 from agents.orchestrator.routing.evidence import RoutingEvidenceCollector
-from agents.orchestrator.service import execute_routed_query, route_query
+from agents.orchestrator.service import execute_routed_query, route_query, stream_orchestrator_chat
 
 router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 
@@ -32,6 +33,30 @@ def route(
 ) -> OrchestratorRouteResponse:
     """Spring Core가 호출하는 evidence 기반 route endpoint."""
     return route_query(request, evidence_collector=evidence_collector)
+
+
+@router.post("/chat/stream", response_model=None)
+def chat_stream(
+    request: OrchestratorChatRequest,
+    evidence_collector: RoutingEvidenceCollector = Depends(get_routing_evidence_collector),
+    main_repository: MainChunkRepository = Depends(get_main_chunk_repository),
+    main_embedding_provider: EmbeddingProvider = Depends(get_main_embedding_provider),
+    main_llm_client: LLMClient = Depends(get_main_llm_client),
+    library_repository: LibraryRepository = Depends(get_library_repository),
+) -> StreamingResponse:
+    """라우팅 결과를 즉시 전송하고 MAIN LLM 응답을 SSE 청크로 스트리밍한다."""
+    return StreamingResponse(
+        stream_orchestrator_chat(
+            request,
+            evidence_collector=evidence_collector,
+            main_repository=main_repository,
+            main_embedding_provider=main_embedding_provider,
+            main_llm_client=main_llm_client,
+            library_repository=library_repository,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/chat", response_model=None)

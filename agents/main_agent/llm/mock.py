@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Iterator
+
 
 class MockLLMClient:
     """테스트와 fallback에 사용하는 deterministic LLM client."""
@@ -12,3 +14,8 @@ class MockLLMClient:
         if self.should_fail:
             raise RuntimeError("mock llm failure")
         return self.answer
+
+    def generate_stream(self, prompt: str) -> Iterator[str]:
+        if self.should_fail:
+            raise RuntimeError("mock llm failure")
+        yield self.answer
