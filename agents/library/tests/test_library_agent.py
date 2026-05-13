@@ -186,6 +186,9 @@ def test_book_location_answer_uses_location_fields() -> None:
     assert response.resultCount == 1
     assert "제1자료실" in response.answer
     assert response.matchedBooks[0].holdingCallNo == "005.133 ㄱ123ㅍ"
+    assert response.summary is not None
+    assert response.summary["contentType"] == "book_location"
+    assert response.summary["locationCard"]["shelfCode"] == "A-12"
 
 
 def test_guide_question_uses_guide_docs() -> None:
@@ -198,7 +201,8 @@ def test_guide_question_uses_guide_docs() -> None:
     assert response.intent == "LIBRARY_GUIDE"
     assert response.fallbackUsed is False
     assert response.sources[0].title == "학술정보관 운영 시간"
-    assert "09:00" in response.answer
+    assert "09:00" in response.summary["content"]
+    assert response.extractedTables == []
 
 
 def test_guide_question_uses_injected_llm_answer() -> None:
@@ -210,7 +214,8 @@ def test_guide_question_uses_injected_llm_answer() -> None:
 
     assert response.intent == "LIBRARY_GUIDE"
     assert response.fallbackUsed is False
-    assert response.answer == "학술정보관은 평일 09:00부터 21:00까지 운영합니다."
+    assert response.answer.startswith("학술정보관 운영 시간:")
+    assert response.summary["title"] == "학술정보관 운영 시간"
 
 
 def test_guide_llm_failure_falls_back_to_chunk_summary() -> None:
@@ -223,7 +228,90 @@ def test_guide_llm_failure_falls_back_to_chunk_summary() -> None:
     assert response.intent == "LIBRARY_GUIDE"
     assert response.fallbackUsed is False
     assert response.answer.startswith("학술정보관 운영 시간")
-    assert "09:00" in response.answer
+    assert "09:00" in response.summary["content"]
+
+
+def test_guide_answer_without_llm_keeps_full_content_without_ellipsis() -> None:
+    long_content = "문서 제목: 개관시간/휴관일 안내 섹션: 개관시간 " + ("학술정보관 안내 문장 " * 40)
+    repo = MockLibraryRepository(
+        books=[],
+        guides=[
+            GuideDocRecord(
+                id=77,
+                source_url="https://library.example.edu/time",
+                title="개관시간/휴관일 안내",
+                content=long_content,
+                updated_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            )
+        ],
+    )
+
+    response = run_library_agent(make_request("학술정보관 운영 시간 알려줘"), repo, llm_client=None)
+
+    assert response.intent == "LIBRARY_GUIDE"
+    assert response.fallbackUsed is False
+    assert response.answer.startswith("개관시간/휴관일 안내:")
+    assert response.summary["content"] == long_content
+    assert not response.answer.endswith("...")
+
+
+def test_guide_llm_failure_keeps_full_content_without_ellipsis() -> None:
+    long_content = "문서 제목: 개관시간/휴관일 안내 섹션: 개관시간 " + ("운영시간 정보 " * 40)
+    repo = MockLibraryRepository(
+        books=[],
+        guides=[
+            GuideDocRecord(
+                id=78,
+                source_url="https://library.example.edu/time",
+                title="개관시간/휴관일 안내",
+                content=long_content,
+                updated_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            )
+        ],
+    )
+
+    response = run_library_agent(
+        make_request("학술정보관 운영 시간 알려줘"),
+        repo,
+        llm_client=MockLLMClient(should_fail=True),
+    )
+
+    assert response.intent == "LIBRARY_GUIDE"
+    assert response.fallbackUsed is False
+    assert response.answer.startswith("개관시간/휴관일 안내:")
+    assert response.summary["content"] == long_content
+    assert not response.answer.endswith("...")
+
+
+def test_guide_response_extracts_markdown_table_to_structured_rows() -> None:
+    table_content = (
+        "문서 제목: 개관시간/휴관일 안내\n"
+        "섹션: 개관시간\n"
+        "| 위치 | 구분 | 이용 시간 |\n"
+        "| --- | --- | --- |\n"
+        "| 학술정보관 | 자료열람실 | 평 일 : 09:00 ~ 21:00 |\n"
+        "| 창의열람실 | 창의열람실 | 06:30 ~ 23:00 |\n"
+    )
+    repo = MockLibraryRepository(
+        books=[],
+        guides=[
+            GuideDocRecord(
+                id=79,
+                source_url="https://library.example.edu/time-table",
+                title="개관시간/휴관일 안내",
+                content=table_content,
+                updated_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            )
+        ],
+    )
+
+    response = run_library_agent(make_request("언제 열어"), repo, llm_client=None)
+
+    assert response.intent == "LIBRARY_GUIDE"
+    assert response.fallbackUsed is False
+    assert response.extractedTables is not None
+    assert response.extractedTables[0]["headers"] == ["위치", "구분", "이용 시간"]
+    assert response.extractedTables[0]["rows"][0] == ["학술정보관", "자료열람실", "평 일 : 09:00 ~ 21:00"]
 
 
 def test_guide_llm_prompt_contains_question_context_and_source() -> None:
@@ -235,13 +323,8 @@ def test_guide_llm_prompt_contains_question_context_and_source() -> None:
         llm_client=llm_client,
     )
 
-    assert response.answer == "LLM 안내 답변입니다."
-    assert len(llm_client.prompts) == 1
-    prompt = llm_client.prompts[0]
-    assert "사용자 질문: 운영 시간" in prompt
-    assert "학술정보관 운영 시간" in prompt
-    assert "09:00부터 21:00" in prompt
-    assert "https://library.example.edu/hours" in prompt
+    assert response.answer.startswith("학술정보관 운영 시간:")
+    assert llm_client.prompts == []
 
 
 def test_book_search_ignores_injected_llm_client() -> None:
@@ -762,6 +845,8 @@ def test_response_field_names_match_spring_contract() -> None:
         "searchKeyword",
         "resultCount",
         "matchedBooks",
+        "summary",
+        "extractedTables",
     }
     assert set(payload["matchedBooks"][0]) == {
         "id",

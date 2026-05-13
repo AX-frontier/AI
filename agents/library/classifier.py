@@ -21,6 +21,7 @@ BOOK_GENERIC_TERMS = ("책", "도서")
 BOOK_TOPIC_HINTS = ("입문서", "교재", "전공서", "참고서")
 BOOK_QUERY_SUFFIXES = ("있어", "있나요", "있니", "있는지", "보여줘", "알려줘")
 BOOK_TOPIC_SUFFIX_REWRITES = (("입문서", "입문"),)
+LEADING_POSTPOSITIONS = ("에", "에서", "의", "은", "는", "이", "가", "을", "를")
 RECOMMENDATION_HINTS = ("추천", "볼만한", "읽을만", "읽을 만", "비슷한")
 GUIDE_SPECIFIC_TERMS = (
     "운영",
@@ -238,6 +239,8 @@ def extract_search_keyword(
             "",
             cleaned,
         ).strip()
+        leading_particle_pattern = "|".join(re.escape(term) for term in LEADING_POSTPOSITIONS)
+        cleaned = re.sub(rf"^(?:{leading_particle_pattern})\s+", "", cleaned).strip()
         for source, replacement in BOOK_TOPIC_SUFFIX_REWRITES:
             cleaned = re.sub(rf"{re.escape(source)}$", replacement, cleaned).strip()
         if not cleaned and has_generic_book_term:

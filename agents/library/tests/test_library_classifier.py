@@ -180,6 +180,7 @@ def test_extract_search_keyword_strips_trailing_book_indicator_for_book_intents(
     assert extract_search_keyword("클린 코드 책 어디 있어?", "BOOK_LOCATION") == "클린 코드"
     assert extract_search_keyword("컴퓨터 과학 도서를 찾아줘", "BOOK_SEARCH") == "컴퓨터 과학"
     assert extract_search_keyword("파이썬 도서 추천해줘", "BOOK_RECOMMENDATION") == "파이썬"
+    assert extract_search_keyword("도서관에 파이썬 책 있어?", "BOOK_SEARCH") == "파이썬"
 
 
 def test_extract_search_keyword_strips_trailing_book_field_qualifiers() -> None:
