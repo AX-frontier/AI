@@ -29,6 +29,9 @@ class LibraryLLMPolicyDecision:
     reason: str
 
 
+_FOLLOWUP_MEMORY: dict[str, dict[str, str]] = {}
+
+
 def run_library_agent(
     request: LibraryChatRequest,
     repository: LibraryRepository | None = None,
@@ -66,7 +69,9 @@ def run_library_agent(
             keyword,
             location_question=location_question,
         )
-        return build_book_response(classification.intent, books, classification.confidence)
+        response = build_book_response(classification.intent, books, classification.confidence)
+        _remember_context(str(request.conversationUid), classification.intent, keyword)
+        return response
 
     guide_result = _reuse_guide_probe(evidence, keyword, required_limit=3) or guide_retriever.retrieve(
         keyword
@@ -74,7 +79,7 @@ def run_library_agent(
     llm_policy = decide_library_llm_policy(classification, guide_result)
     if guide_result.docs:
         context = guide_retriever.build_context(guide_result)
-        return build_guide_response(
+        response = build_guide_response(
             classification.intent,
             context,
             classification.confidence,
@@ -82,13 +87,22 @@ def run_library_agent(
             if llm_policy.use_answer_llm
             else None,
         )
+        topic = None
+        if response.summary and isinstance(response.summary, dict):
+            title = response.summary.get("title")
+            if isinstance(title, str) and title.strip():
+                topic = title.strip()
+        _remember_context(str(request.conversationUid), classification.intent, keyword, topic=topic)
+        return response
 
     fallback_reason = (
         "관련 학술정보관 안내 문서를 찾지 못했습니다."
         if classification.intent == "LIBRARY_GUIDE"
         else "관련 안내 문서를 찾지 못했습니다."
     )
-    return build_fallback_response(classification.intent, keyword, fallback_reason)
+    response = build_fallback_response(classification.intent, keyword, fallback_reason)
+    _remember_context(str(request.conversationUid), classification.intent, keyword)
+    return response
 
 
 def run_library_agent_stream(
@@ -136,6 +150,7 @@ def run_library_agent_stream(
             evidence, keyword, required_limit=5, location_question=location_question
         ) or book_retriever.retrieve(keyword, location_question=location_question)
         response = build_book_response(classification.intent, books, classification.confidence)
+        _remember_context(str(request.conversationUid), classification.intent, keyword)
         yield {"type": "done", **response.model_dump()}
         return
 
@@ -164,6 +179,12 @@ def run_library_agent_stream(
         else:
             response = build_guide_response(classification.intent, context, classification.confidence, llm_client=None)
         yield {"type": "done", **response.model_dump()}
+        topic = None
+        if response.summary and isinstance(response.summary, dict):
+            title = response.summary.get("title")
+            if isinstance(title, str) and title.strip():
+                topic = title.strip()
+        _remember_context(str(request.conversationUid), classification.intent, keyword, topic=topic)
         return
 
     fallback_reason = (
@@ -172,6 +193,7 @@ def run_library_agent_stream(
         else "관련 안내 문서를 찾지 못했습니다."
     )
     response = build_fallback_response(classification.intent, keyword, fallback_reason)
+    _remember_context(str(request.conversationUid), classification.intent, keyword)
     yield {"type": "done", **response.model_dump()}
 
 
@@ -260,3 +282,52 @@ def _guide_probe_limit(intent: str) -> int:
     if intent in ("LIBRARY_GUIDE", "LIBRARY_GENERAL"):
         return 3
     return 1
+
+
+def _apply_followup_context(conversation_uid: str, message: str) -> str:
+    if not _looks_followup(message):
+        return message
+    memory = _FOLLOWUP_MEMORY.get(conversation_uid)
+    if not memory:
+        return message
+    base_topic = memory.get("topic") or memory.get("keyword")
+    if not base_topic:
+        return message
+    return f"{base_topic} {message}"
+
+
+def _remember_context(
+    conversation_uid: str,
+    intent: str,
+    keyword: str,
+    topic: str | None = None,
+) -> None:
+    _FOLLOWUP_MEMORY[conversation_uid] = {
+        "intent": intent,
+        "keyword": keyword,
+        "topic": topic or keyword,
+    }
+    if len(_FOLLOWUP_MEMORY) > 500:
+        oldest = next(iter(_FOLLOWUP_MEMORY.keys()))
+        _FOLLOWUP_MEMORY.pop(oldest, None)
+
+
+def _looks_followup(message: str) -> bool:
+    lowered = message.strip().lower()
+    if len(lowered) > 40:
+        return False
+    return any(
+        token in lowered
+        for token in (
+            "그럼",
+            "그러면",
+            "그거",
+            "그건",
+            "거긴",
+            "거기",
+            "토요일은",
+            "일요일은",
+            "오늘은",
+            "지금은",
+        )
+    )

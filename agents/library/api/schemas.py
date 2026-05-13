@@ -64,3 +64,5 @@ class LibraryChatResponse(BaseModel):
     searchKeyword: str | None = None
     resultCount: int = 0
     matchedBooks: list[MatchedBook] = Field(default_factory=list)
+    summary: dict[str, Any] | None = None
+    extractedTables: list[dict[str, Any]] | None = None
