@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS library.guide_doc_chunks (
   guide_doc_id BIGINT NOT NULL REFERENCES library.guide_docs(id) ON DELETE CASCADE,
   chunk_index INTEGER NOT NULL,
   content TEXT NOT NULL,
-  embedding vector(384) NOT NULL,
+  embedding vector(1536) NOT NULL,
   content_hash TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

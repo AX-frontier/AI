@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS main_agent.document_chunks (
   chunk_id VARCHAR(120) PRIMARY KEY,
   document_id VARCHAR(120) NOT NULL,
   text TEXT NOT NULL,
-  embedding vector(384) NOT NULL,
+  embedding vector(1536) NOT NULL,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
