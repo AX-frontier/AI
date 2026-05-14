@@ -11,6 +11,7 @@ from agents.main_agent.models import MainChunkRecord
 from agents.main_agent.repository import get_main_chunk_repository
 from agents.orchestrator.api.router import get_routing_evidence_collector
 from agents.orchestrator.routing.evidence import AgentEvidence, RoutingEvidence
+from agents.orchestrator.service import _ORCH_FOLLOWUP_MEMORY
 from app import app
 
 
@@ -93,6 +94,7 @@ class OrchestratorLibraryMockRepository:
 
 
 def test_orchestrator_route_endpoint_returns_main_for_school_notice_query() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.83, reason="main fixed hit"),
@@ -122,9 +124,12 @@ def test_orchestrator_route_endpoint_returns_main_for_school_notice_query() -> N
     assert payload["traceId"] == "tr_001"
     assert payload["conversationUid"] == "conv_001"
     assert payload["evidence"]["mainScore"] == 0.83
+    assert payload["routingMode"] == "FRESH"
+    assert payload["routingReasonCode"] == "FRESH_DEFAULT"
 
 
 def test_orchestrator_route_endpoint_returns_library_for_library_query() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.55, reason="main weak hit"),
@@ -151,9 +156,11 @@ def test_orchestrator_route_endpoint_returns_library_for_library_query() -> None
     assert payload["targetAgent"] == "LIBRARY"
     assert payload["intent"] == "LIBRARY"
     assert payload["evidence"]["libraryScore"] == 0.82
+    assert payload["routingMode"] == "FRESH"
 
 
 def test_orchestrator_route_endpoint_returns_document_review_for_review_query() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.52, reason="main weak hit"),
@@ -183,6 +190,7 @@ def test_orchestrator_route_endpoint_returns_document_review_for_review_query() 
 
 
 def test_orchestrator_route_endpoint_prioritizes_explicit_document_review() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.862, reason="main weak hit"),
@@ -212,6 +220,7 @@ def test_orchestrator_route_endpoint_prioritizes_explicit_document_review() -> N
 
 
 def test_orchestrator_route_endpoint_returns_fallback_for_unrelated_query() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.2, reason="weak main"),
@@ -241,6 +250,7 @@ def test_orchestrator_route_endpoint_returns_fallback_for_unrelated_query() -> N
 
 
 def test_orchestrator_chat_endpoint_executes_main_agent() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.9, reason="main hit"),
@@ -274,6 +284,7 @@ def test_orchestrator_chat_endpoint_executes_main_agent() -> None:
 
 
 def test_orchestrator_chat_endpoint_executes_library_agent() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.3, reason="weak main"),
@@ -304,6 +315,7 @@ def test_orchestrator_chat_endpoint_executes_library_agent() -> None:
 
 
 def test_orchestrator_chat_endpoint_executes_document_review_agent() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.2, reason="weak main"),
@@ -338,6 +350,7 @@ def test_orchestrator_chat_endpoint_executes_document_review_agent() -> None:
 
 
 def test_orchestrator_chat_endpoint_requests_document_input_when_document_body_missing() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.2, reason="weak main"),
@@ -369,6 +382,7 @@ def test_orchestrator_chat_endpoint_requests_document_input_when_document_body_m
 
 
 def test_orchestrator_chat_endpoint_returns_fallback_for_unrelated_query() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
             main=AgentEvidence(score=0.2, reason="weak main"),
@@ -394,3 +408,85 @@ def test_orchestrator_chat_endpoint_returns_fallback_for_unrelated_query() -> No
     payload = response.json()
     assert payload["targetAgent"] == "FALLBACK"
     assert payload["fallbackUsed"] is True
+
+
+def test_route_recomputes_and_switches_library_to_main_on_new_query() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.2, reason="weak main"),
+            library=AgentEvidence(score=0.9, reason="library hit"),
+            document_review=AgentEvidence(score=0.0, reason="no document hit"),
+        )
+    )
+    client = TestClient(app)
+
+    first = client.post(
+        "/orchestrator/chat",
+        json={
+            "queryUid": "q_switch_001",
+            "traceId": "tr_switch_001",
+            "conversationUid": "conv_switch",
+            "message": "파이썬 책 어디 있어?",
+        },
+    )
+    assert first.status_code == 200
+    assert first.json()["targetAgent"] == "LIBRARY"
+
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.92, reason="main hit"),
+            library=AgentEvidence(score=0.3, reason="weak library"),
+            document_review=AgentEvidence(score=0.0, reason="no document hit"),
+        )
+    )
+    app.dependency_overrides[get_main_chunk_repository] = lambda: OrchestratorMainMockRepository()
+    app.dependency_overrides[get_main_embedding_provider] = lambda: DeterministicEmbeddingProvider()
+    app.dependency_overrides[get_main_llm_client] = lambda: MockLLMClient("메인 에이전트 응답입니다.")
+
+    second = client.post(
+        "/orchestrator/chat",
+        json={
+            "queryUid": "q_switch_002",
+            "traceId": "tr_switch_002",
+            "conversationUid": "conv_switch",
+            "message": "복수전공 신청 기간 알려줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+    assert second.status_code == 200
+    assert second.json()["targetAgent"] == "MAIN"
+
+
+def test_route_endpoint_uses_followup_sticky_tiebreak() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    _ORCH_FOLLOWUP_MEMORY["conv_followup"] = {
+        "targetAgent": "MAIN",
+        "topic": "복수전공 신청 기간",
+        "updatedAt": "2099-01-01T00:00:00+00:00",
+    }
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.72, reason="main close hit"),
+            library=AgentEvidence(score=0.79, reason="library close hit"),
+            document_review=AgentEvidence(score=0.0, reason="no document hit"),
+        )
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/orchestrator/route",
+        json={
+            "queryUid": "q_followup_001",
+            "traceId": "tr_followup_001",
+            "conversationUid": "conv_followup",
+            "message": "그럼 링크도 줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "MAIN"
+    assert payload["routingMode"] == "FOLLOWUP_STICKY"
+    assert payload["routingReasonCode"] == "FOLLOWUP_REUSE"

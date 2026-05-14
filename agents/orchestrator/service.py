@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Iterator
 
 from agents.document_review.agent import run_document_review_agent
@@ -29,6 +31,15 @@ from agents.orchestrator.routing.evidence import RoutingEvidenceCollector
 from agents.orchestrator.routing.router import EvidenceBasedRouter
 
 _ORCH_FOLLOWUP_MEMORY: dict[str, dict[str, str]] = {}
+_ORCH_FOLLOWUP_TTL = timedelta(minutes=15)
+_FOLLOWUP_STICKY_MARGIN = 0.10
+
+
+@dataclass(frozen=True)
+class ResolvedRoute:
+    route: OrchestratorRouteResponse
+    routing_mode: str
+    routing_reason_code: str
 
 
 def route_query(
@@ -38,19 +49,35 @@ def route_query(
     router: EvidenceBasedRouter | None = None,
 ) -> OrchestratorRouteResponse:
     """질의를 evidence 기반으로 라우팅하고 Spring 호환 응답을 반환한다."""
+    resolved = resolve_target_agent(
+        request.conversationUid,
+        request.message,
+        evidence_collector=evidence_collector,
+        router=router,
+    )
+    return _build_route_response(request, resolved)
+
+
+def resolve_target_agent(
+    conversation_uid: str,
+    message: str,
+    *,
+    evidence_collector: RoutingEvidenceCollector | None = None,
+    router: EvidenceBasedRouter | None = None,
+) -> ResolvedRoute:
     collector = evidence_collector or RoutingEvidenceCollector()
     route_router = router or EvidenceBasedRouter()
-    evidence = collector.collect(request.message)
-    decision = route_router.route(evidence)
 
-    return OrchestratorRouteResponse(
-        queryUid=request.queryUid,
-        traceId=request.traceId,
-        conversationUid=request.conversationUid,
-        targetAgent=decision.target_agent,
-        intent=decision.intent,
-        confidence=round(decision.confidence, 3),
-        reason=decision.reason,
+    evidence = collector.collect(message)
+    fresh_decision = route_router.route(evidence)
+    fresh_response = OrchestratorRouteResponse(
+        queryUid="",
+        traceId="",
+        conversationUid=conversation_uid,
+        targetAgent=fresh_decision.target_agent,
+        intent=fresh_decision.intent,
+        confidence=round(fresh_decision.confidence, 3),
+        reason=fresh_decision.reason,
         evidence=RoutingEvidencePayload(
             mainScore=evidence.main.score,
             libraryScore=evidence.library.score,
@@ -59,6 +86,125 @@ def route_query(
             libraryReason=evidence.library.reason,
             documentReviewReason=evidence.document_review.reason,
         ),
+        routingMode="FRESH",
+        routingReasonCode="FRESH_DEFAULT",
+    )
+
+    override = _parse_user_agent_override(message)
+    if override is not None:
+        overridden = fresh_response.model_copy(
+            update={
+                "targetAgent": override,
+                "intent": override,
+                "routingMode": "FRESH",
+                "routingReasonCode": "USER_OVERRIDE",
+                "reason": f"user explicit override to {override}",
+                "confidence": max(0.9, fresh_response.confidence),
+            }
+        )
+        return ResolvedRoute(overridden, "FRESH", "USER_OVERRIDE")
+
+    memory = _get_valid_followup_memory(conversation_uid)
+    if not _looks_followup(message) or memory is None:
+        return ResolvedRoute(fresh_response, "FRESH", "FRESH_DEFAULT")
+
+    previous_target = memory.get("targetAgent")
+    top_target, top_score, second_score = _top_two_scores(evidence)
+    if previous_target and previous_target != top_target:
+        if top_score - second_score < _FOLLOWUP_STICKY_MARGIN and _agent_score(evidence, previous_target) > 0:
+            sticky = fresh_response.model_copy(
+                update={
+                    "targetAgent": previous_target,
+                    "intent": previous_target,
+                    "confidence": round(_agent_score(evidence, previous_target), 3),
+                    "reason": "follow-up reuse selected by tie-break",
+                    "routingMode": "FOLLOWUP_STICKY",
+                    "routingReasonCode": "FOLLOWUP_REUSE",
+                }
+            )
+            return ResolvedRoute(sticky, "FOLLOWUP_STICKY", "FOLLOWUP_REUSE")
+        switched = fresh_response.model_copy(
+            update={
+                "routingMode": "FRESH",
+                "routingReasonCode": "EVIDENCE_SWITCH",
+            }
+        )
+        return ResolvedRoute(switched, "FRESH", "EVIDENCE_SWITCH")
+
+    return ResolvedRoute(fresh_response, "FRESH", "FRESH_DEFAULT")
+
+
+def _top_two_scores(evidence) -> tuple[str, float, float]:
+    ranked = sorted(
+        [
+            ("MAIN", evidence.main.score),
+            ("LIBRARY", evidence.library.score),
+            ("DOCUMENT_REVIEW", evidence.document_review.score),
+        ],
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    top_target, top_score = ranked[0]
+    second_score = ranked[1][1]
+    return top_target, top_score, second_score
+
+
+def _agent_score(evidence, target: str) -> float:
+    if target == "MAIN":
+        return evidence.main.score
+    if target == "LIBRARY":
+        return evidence.library.score
+    if target == "DOCUMENT_REVIEW":
+        return evidence.document_review.score
+    return 0.0
+
+
+def _parse_user_agent_override(message: str) -> str | None:
+    lowered = message.lower()
+    if "메인 에이전트" in message or "main agent" in lowered:
+        return "MAIN"
+    if "도서" in message and "에이전트" in message:
+        return "LIBRARY"
+    if "라이브러리 에이전트" in message or "library agent" in lowered:
+        return "LIBRARY"
+    if "문서 검토 에이전트" in message or "document review" in lowered:
+        return "DOCUMENT_REVIEW"
+    return None
+
+
+def _get_valid_followup_memory(conversation_uid: str) -> dict[str, str] | None:
+    memory = _ORCH_FOLLOWUP_MEMORY.get(conversation_uid)
+    if not memory:
+        return None
+    updated_at = memory.get("updatedAt")
+    if not updated_at:
+        return memory
+    try:
+        updated_at_dt = datetime.fromisoformat(updated_at)
+    except ValueError:
+        return memory
+    if datetime.now(UTC) - updated_at_dt > _ORCH_FOLLOWUP_TTL:
+        _ORCH_FOLLOWUP_MEMORY.pop(conversation_uid, None)
+        return None
+    return memory
+
+
+def _build_route_response(
+    request: OrchestratorRouteRequest,
+    resolved: ResolvedRoute,
+) -> OrchestratorRouteResponse:
+    route_response = resolved.route
+    return OrchestratorRouteResponse(
+        queryUid=request.queryUid,
+        traceId=request.traceId,
+        conversationUid=request.conversationUid,
+        targetAgent=route_response.targetAgent,
+        intent=route_response.intent,
+        confidence=route_response.confidence,
+        reason=route_response.reason,
+        evidence=route_response.evidence,
+        routingMode=resolved.routing_mode,
+        routingReasonCode=resolved.routing_reason_code,
     )
 
 
@@ -77,16 +223,13 @@ def execute_routed_query(
         str(request.conversationUid),
         request.message,
     )
-    route_result = route_query(
-        OrchestratorRouteRequest(
-            queryUid=request.queryUid,
-            traceId=request.traceId,
-            conversationUid=request.conversationUid,
-            message=resolved_message,
-        ),
+    resolved_route = resolve_target_agent(
+        str(request.conversationUid),
+        resolved_message,
         evidence_collector=evidence_collector,
         router=router,
     )
+    route_result = _build_route_response(request, resolved_route)
 
     if route_result.targetAgent == "MAIN":
         response = run_main_agent(
@@ -175,18 +318,15 @@ def stream_orchestrator_chat(
         str(request.conversationUid),
         request.message,
     )
-    route_result = route_query(
-        OrchestratorRouteRequest(
-            queryUid=request.queryUid,
-            traceId=request.traceId,
-            conversationUid=request.conversationUid,
-            message=resolved_message,
-        ),
+    resolved_route = resolve_target_agent(
+        str(request.conversationUid),
+        resolved_message,
         evidence_collector=evidence_collector,
         router=router,
     )
+    route_result = _build_route_response(request, resolved_route)
 
-    yield f"data: {json.dumps({'type': 'routing', 'targetAgent': route_result.targetAgent, 'intent': route_result.intent})}\n\n"
+    yield f"data: {json.dumps({'type': 'routing', 'targetAgent': route_result.targetAgent, 'intent': route_result.intent, 'routingMode': route_result.routingMode, 'routingReasonCode': route_result.routingReasonCode})}\n\n"
 
     if route_result.targetAgent == "MAIN":
         repo = main_repository or get_main_chunk_repository()
@@ -289,7 +429,11 @@ def _extract_memory_topic(message: str) -> str:
 
 
 def _remember_orchestrator_context(conversation_uid: str, target_agent: str, topic: str) -> None:
-    _ORCH_FOLLOWUP_MEMORY[conversation_uid] = {"targetAgent": target_agent, "topic": topic}
+    _ORCH_FOLLOWUP_MEMORY[conversation_uid] = {
+        "targetAgent": target_agent,
+        "topic": topic,
+        "updatedAt": datetime.now(UTC).isoformat(),
+    }
     if len(_ORCH_FOLLOWUP_MEMORY) > 1000:
         oldest = next(iter(_ORCH_FOLLOWUP_MEMORY.keys()))
         _ORCH_FOLLOWUP_MEMORY.pop(oldest, None)
