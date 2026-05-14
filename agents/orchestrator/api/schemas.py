@@ -9,6 +9,13 @@ from agents.library.api.schemas import LibraryChatResponse
 from agents.main_agent.api.schemas import MainChatResponse
 
 TargetAgent = Literal["MAIN", "LIBRARY", "DOCUMENT_REVIEW", "FALLBACK"]
+RoutingMode = Literal["FRESH", "FOLLOWUP_STICKY"]
+RoutingReasonCode = Literal[
+    "FRESH_DEFAULT",
+    "USER_OVERRIDE",
+    "FOLLOWUP_REUSE",
+    "EVIDENCE_SWITCH",
+]
 
 
 class OrchestratorRouteRequest(BaseModel):
@@ -48,6 +55,8 @@ class OrchestratorRouteResponse(BaseModel):
     confidence: float
     reason: str
     evidence: RoutingEvidencePayload
+    routingMode: RoutingMode = "FRESH"
+    routingReasonCode: RoutingReasonCode = "FRESH_DEFAULT"
 
 
 class OrchestratorFallbackResponse(BaseModel):
