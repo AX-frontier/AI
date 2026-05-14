@@ -137,17 +137,17 @@ GET /ingestion/status/{jobId}
         "skippedCount": 20,
         "deletedCount": 0,
         "processedCount": 23,
-        "embeddingProvider": "E5EmbeddingProvider",
-        "embeddingDimensions": 384
+        "embeddingProvider": "GeminiEmbeddingProvider",
+        "embeddingDimensions": 1536
       }
     }
   ]
 }
 ```
 
-현재 기본 임베딩은 `.env`의 `MAIN_AGENT_EMBEDDING_PROVIDER=e5` 설정을 따라
-`intfloat/multilingual-e5-small`을 사용합니다. 이 모델의 출력 차원은 384이므로
-`data/schemas/main_agent.sql`도 `vector(384)` 기준입니다. 임베딩 모델을 바꾸면
+현재 기본 임베딩은 `.env`의 `MAIN_AGENT_EMBEDDING_PROVIDER=gemini` 설정을 따라
+`gemini-embedding-2`를 사용합니다. 기본 출력 차원을 1536으로 맞춰 사용하며
+`data/schemas/main_agent.sql`도 `vector(1536)` 기준입니다. 임베딩 모델을 바꾸면
 `MAIN_AGENT_EMBEDDING_DIMENSIONS`와 schema의 vector 차원을 함께 맞춰야 합니다.
 
 ## HSEL Library Crawler
