@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from agents.document_review.api.schemas import DocumentReviewRequest, DocumentReviewResponse
 from agents.document_review.generator import build_document_review_response, build_fallback_response
-from agents.document_review.rules import apply_safe_suggestions, apply_safe_suggestions_to_html, review_rules
+from agents.document_review.rules import (
+    apply_safe_suggestions,
+    apply_safe_suggestions_to_html,
+    review_rules,
+    review_table_checks,
+)
 from agents.document_review.tables import extract_tables_from_html
 
 
@@ -14,6 +19,12 @@ def run_document_review_agent(request: DocumentReviewRequest) -> DocumentReviewR
 
     extracted_tables = extract_tables_from_html(request.document.bodyHtml if request.document else None)
     findings, checks, format_notices = review_rules(body_text, extracted_tables)
+    table_checks_available = True
+    try:
+        table_checks = review_table_checks(body_text, extracted_tables)
+    except Exception:
+        table_checks = []
+        table_checks_available = False
     revised_text = apply_safe_suggestions(body_text, findings)
     revised_html = apply_safe_suggestions_to_html(
         request.document.bodyHtml if request.document else None,
@@ -23,6 +34,8 @@ def run_document_review_agent(request: DocumentReviewRequest) -> DocumentReviewR
         findings=findings,
         checks=checks,
         format_notices=format_notices,
+        table_checks=table_checks,
+        table_checks_available=table_checks_available,
         extracted_tables=extracted_tables,
         revised_text=revised_text,
         revised_html=revised_html,

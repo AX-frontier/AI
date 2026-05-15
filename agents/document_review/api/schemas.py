@@ -77,6 +77,18 @@ class ExtractedTable(BaseModel):
     rows: list[list[str]]
 
 
+class TableCheckResponse(BaseModel):
+    id: str
+    tableIndex: int
+    tableTitle: str
+    category: str
+    severity: Literal["HIGH", "MEDIUM", "LOW"]
+    status: Literal["SUITABLE", "REVISION_REQUIRED", "CHECK_REQUIRED", "NOT_APPLICABLE"]
+    message: str
+    suggestion: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
 class DocumentReviewResponse(BaseModel):
     targetAgent: Literal["DOCUMENT_REVIEW"] = "DOCUMENT_REVIEW"
     intent: Literal["DOCUMENT_REVIEW"] = "DOCUMENT_REVIEW"
@@ -90,6 +102,8 @@ class DocumentReviewResponse(BaseModel):
     checkRequiredItems: list[CheckRequiredItemResponse]
     formatNoticeItems: list[FormatNoticeItemResponse]
     extractedTables: list[ExtractedTable] = Field(default_factory=list)
+    tableChecks: list[TableCheckResponse] = Field(default_factory=list)
+    tableChecksAvailable: bool = True
     revisedDocument: RevisedDocument
     reviewMarkdown: str
     confidence: float

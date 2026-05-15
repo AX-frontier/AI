@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from agents.document_review.agent import run_document_review_agent
-from agents.document_review.api.schemas import DocumentReviewRequest, ReviewDocument
+from agents.document_review.api.schemas import DocumentReviewRequest, ReviewDocument, TableCheckResponse
+from agents.document_review.rules import review_rules
 
 
 def test_document_review_agent_suggests_prompt_rule_revisions() -> None:
@@ -89,6 +90,151 @@ def test_document_review_agent_does_not_flag_matching_korean_amount() -> None:
     assert all(item.category != "금액 표기" for item in response.checkRequiredItems)
 
 
+def test_end_marker_spacing_requires_exact_two_spaces() -> None:
+    attached_findings, attached_checks, _ = review_rules("붙임  1. 안내문 1부.끝.")
+    one_space_findings, one_space_checks, _ = review_rules("붙임  1. 안내문 1부. 끝.")
+    two_space_findings, two_space_checks, _ = review_rules("붙임  1. 안내문 1부.  끝.")
+    tab_findings, tab_checks, _ = review_rules("붙임  1. 안내문 1부.\t끝.")
+    one_nbsp_findings, one_nbsp_checks, _ = review_rules("붙임  1. 안내문 1부.\u00a0끝.")
+    nbsp_space_findings, nbsp_space_checks, _ = review_rules("붙임  1. 안내문 1부.\u00a0 끝.")
+
+    assert any(finding.rule_code == "END_MARKER" for finding in attached_findings)
+    assert not any(check.category == "끝표시" for check in attached_checks)
+    assert any(finding.rule_code == "END_MARKER" for finding in one_space_findings)
+    assert not any(check.category == "끝표시" for check in one_space_checks)
+    assert not any(finding.rule_code == "END_MARKER" for finding in two_space_findings)
+    assert not any(check.category == "끝표시" for check in two_space_checks)
+    assert any(finding.rule_code == "END_MARKER" for finding in tab_findings)
+    assert not any(check.category == "끝표시" for check in tab_checks)
+    assert any(finding.rule_code == "END_MARKER" for finding in one_nbsp_findings)
+    assert not any(check.category == "끝표시" for check in one_nbsp_checks)
+    assert not any(finding.rule_code == "END_MARKER" for finding in nbsp_space_findings)
+    assert not any(check.category == "끝표시" for check in nbsp_space_checks)
+
+
+def test_end_marker_requires_sentence_period_before_marker() -> None:
+    findings, checks, _ = review_rules("제출 완료  끝.")
+
+    end_marker_findings = [finding for finding in findings if finding.rule_code == "END_MARKER"]
+
+    assert end_marker_findings
+    assert end_marker_findings[0].suggested_text == "제출 완료.  끝."
+    assert not any(check.category == "끝표시" for check in checks)
+
+
+def test_weekday_date_requires_day_dot_and_no_space_before_weekday() -> None:
+    missing_dot_findings, _, _ = review_rules("일시: 2013. 6. 27(목)")
+    spaced_weekday_findings, _, _ = review_rules("일시: 2013. 6. 27. (목)")
+    clean_findings, _, _ = review_rules("일시: 2013. 6. 27.(목)")
+
+    assert any(finding.suggested_text == "2013. 6. 27.(목)" for finding in missing_dot_findings)
+    assert any(finding.suggested_text == "2013. 6. 27.(목)" for finding in spaced_weekday_findings)
+    assert not any(finding.rule_code == "DATE_FORMAT" for finding in clean_findings)
+
+
+def test_document_review_agent_checks_item_marker_hierarchy() -> None:
+    findings, checks, _ = review_rules(
+        "1) 학술정보팀 수입을 정산합니다.\n"
+        "2. 수입 정산 내용\n"
+        " 가. 정산 대상\n"
+        " 나. 정산 기간\n"
+        "다) 정산 금액\n"
+        "  끝."
+    )
+
+    hierarchy_checks = [item for item in checks if item.category == "항목 번호 체계"]
+    marker_findings = [item for item in findings if item.rule_code == "ITEM_MARKER_STYLE"]
+
+    assert marker_findings
+    assert any(item.original_text == "1) 학술정보팀 수입을 정산합니다." and item.suggested_text == "1. 학술정보팀 수입을 정산합니다." for item in marker_findings)
+    assert any(item.original_text == "다) 정산 금액" and item.suggested_text == "다. 정산 금액" for item in marker_findings)
+    assert any("2타씩 오른쪽" in item.message for item in hierarchy_checks)
+
+
+def test_document_review_agent_accepts_manual_item_marker_order() -> None:
+    _, checks, _ = review_rules(
+        "1. 수입 정산 내용\n"
+        "  가. 정산 대상\n"
+        "  나. 정산 기간\n"
+        "    1) 상세 내역\n"
+        "    2) 소요예산\n"
+        "2. 붙임\n"
+        "  끝."
+    )
+
+    assert all(item.category != "항목 번호 체계" for item in checks)
+
+
+def test_document_review_agent_suggests_attachment_label_as_butim() -> None:
+    findings, checks, _ = review_rules(
+        "첨부  1. 도서 연체료 1부.\n"
+        "      2. 문서 출력료 1부.\n"
+        "      3. 연회비 1부.  끝."
+    )
+
+    label_findings = [item for item in findings if item.rule_code == "ATTACHMENT_LABEL"]
+
+    assert label_findings
+    assert label_findings[0].suggested_text == "붙임  1. 도서 연체료 1부."
+    assert "첨부" in label_findings[0].original_text
+    assert any(item.category == "붙임 표시" for item in checks)
+
+
+def test_document_review_agent_applies_attachment_label_to_html_content() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000019",
+        traceId="00000000-0000-0000-0000-000000000020",
+        conversationUid="00000000-0000-0000-0000-000000000021",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText="첨부  1. 도서 연체료 1부.\n      2. 문서 출력료 1부.  끝.",
+            bodyHtml="<p>첨부&nbsp;&nbsp;1. 도서 연체료 1부.</p><p>2. 문서 출력료 1부.  끝.</p>",
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert "붙임" in response.revisedDocument.content
+    assert response.revisedDocument.htmlContent is not None
+    assert "붙임" in response.revisedDocument.htmlContent
+    assert "첨부" not in response.revisedDocument.htmlContent
+
+
+def test_document_review_agent_applies_item_marker_style_to_revised_content() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000022",
+        traceId="00000000-0000-0000-0000-000000000023",
+        conversationUid="00000000-0000-0000-0000-000000000024",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "1) 학술정보팀 수입(2026년 4월분)을 정산합니다.\n"
+                "2. 수입 정산 내용\n"
+                " 가. 정산 대상\n"
+                " 다) 정산 금액\n"
+                "붙임  1. 도서 연체료 1부.  끝."
+            ),
+            bodyHtml=(
+                "<p>1) 학술정보팀 수입(2026년 4월분)을 정산합니다.</p>"
+                "<p>2. 수입 정산 내용</p>"
+                "<p>&nbsp;가. 정산 대상</p>"
+                "<p>&nbsp;다) 정산 금액</p>"
+                "<p>붙임&nbsp;&nbsp;1. 도서 연체료 1부.  끝.</p>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert "1. 학술정보팀 수입" in response.revisedDocument.content
+    assert "다. 정산 금액" in response.revisedDocument.content
+    assert "1) 학술정보팀 수입" not in response.revisedDocument.content
+    assert "다) 정산 금액" not in response.revisedDocument.content
+    assert response.revisedDocument.htmlContent is not None
+    assert "1. 학술정보팀 수입" in response.revisedDocument.htmlContent
+    assert "다. 정산 금액" in response.revisedDocument.htmlContent
+
+
 def test_document_review_agent_does_not_infer_budget_table_from_keyword_only() -> None:
     request = DocumentReviewRequest(
         queryUid="00000000-0000-0000-0000-000000000001",
@@ -117,6 +263,7 @@ def test_document_review_agent_extracts_html_tables() -> None:
                 "<table>"
                 "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
                 "</table>"
             ),
         ),
@@ -172,3 +319,207 @@ def test_document_review_agent_checks_budget_table_required_columns_from_html() 
     budget_checks = [item for item in response.checkRequiredItems if item.category == "소요예산 표시"]
     assert budget_checks
     assert "세목코드" in budget_checks[0].message
+
+
+def test_document_review_agent_returns_table_checks_for_amount_mismatch() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000001",
+        traceId="00000000-0000-0000-0000-000000000002",
+        conversationUid="00000000-0000-0000-0000-000000000003",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입(2026년 4월분) 정산\n"
+                "다. 정산 금액: 금269,320원(금이십육만구천삼백이십원)\n"
+                "라. 상세 내역\n"
+                "마. 소요예산\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<table>"
+                "<tr><td>구  분</td><td>건 수</td><td>금 액(원)</td><td></td><td>비  고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert response.tableChecks
+    assert response.tableChecksAvailable is True
+    messages = [item.message for item in response.tableChecks]
+    assert any("본문 정산 금액 269,320원과 상세 내역 합계 254,400원이 14,920원 차이" in message for message in messages)
+    assert any("본문 정산 금액 269,320원과 소요예산 254,400원이 14,920원 차이" in message for message in messages)
+
+
+def test_document_review_agent_skips_clean_table_checks() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000004",
+        traceId="00000000-0000-0000-0000-000000000005",
+        conversationUid="00000000-0000-0000-0000-000000000006",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "다. 정산 금액: 금254,400원(금이십오만사천사백원)\n"
+                "라. 상세 내역\n"
+                "마. 소요예산\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert response.tableChecks == []
+
+
+def test_document_review_agent_does_not_flag_non_billing_table() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000007",
+        traceId="00000000-0000-0000-0000-000000000008",
+        conversationUid="00000000-0000-0000-0000-000000000009",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText="평가 결과를 보고합니다.  끝.",
+            bodyHtml=(
+                "<table>"
+                "<tr><td>구분</td><td>금액</td><td>비고</td></tr>"
+                "<tr><td>평가 항목</td><td>5점</td><td>우수</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert response.tableChecks == []
+
+
+def test_document_review_agent_marks_table_review_available_when_no_tables() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000010",
+        traceId="00000000-0000-0000-0000-000000000011",
+        conversationUid="00000000-0000-0000-0000-000000000012",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(bodyText="정산 결과를 보고합니다.  끝."),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert response.tableChecksAvailable is True
+    assert response.tableChecks == []
+
+
+def test_document_review_agent_uses_declared_settlement_amount_not_other_amounts() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000013",
+        traceId="00000000-0000-0000-0000-000000000014",
+        conversationUid="00000000-0000-0000-0000-000000000015",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "가. 정산 대상: 도서 연체료 192,400원, 문서 출력료 60,000원, 연회비 2,000원\n"
+                "다. 정산 금액: 금254,400원\n"
+                "라. 상세 내역\n"
+                "마. 소요예산\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>60,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert response.tableChecks == []
+
+
+def test_document_review_agent_ignores_one_won_table_difference() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000016",
+        traceId="00000000-0000-0000-0000-000000000017",
+        conversationUid="00000000-0000-0000-0000-000000000018",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText="학술정보팀 수입 정산\n다. 정산 금액: 금254,401원\n라. 상세 내역\n마. 소요예산\n  끝.",
+            bodyHtml=(
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>254,400</td><td>254,400</td><td></td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert response.tableChecks == []
+
+
+def test_table_check_response_contract_uses_camel_case_keys() -> None:
+    item = TableCheckResponse(
+        id="table-check-001",
+        tableIndex=1,
+        tableTitle="수입 정산 상세 내역",
+        category="표 검토",
+        severity="HIGH",
+        status="CHECK_REQUIRED",
+        message="금액 확인 필요",
+        suggestion="원본 표에서 확인",
+        evidence={"difference": 14920},
+    )
+
+    assert set(item.model_dump().keys()) == {
+        "id",
+        "tableIndex",
+        "tableTitle",
+        "category",
+        "severity",
+        "status",
+        "message",
+        "suggestion",
+        "evidence",
+    }
