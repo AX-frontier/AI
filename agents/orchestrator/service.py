@@ -583,7 +583,7 @@ def stream_orchestrator_chat(
     library_repository: LibraryRepository | None = None,
 ) -> Iterator[str]:
     """라우팅 결과를 먼저 전송하고 MAIN 에이전트는 LLM 응답을 청크 단위로 스트리밍한다."""
-    from agents.main_agent.generator import _build_link_description_prompt, _top_source_links, _format_link_guide_answer, _default_link_description, build_main_fallback_response, MAIN_VECTOR_THRESHOLD
+    from agents.main_agent.generator import _build_link_description_prompt, select_source_links, _format_link_guide_answer, _default_link_description, build_main_fallback_response, MAIN_VECTOR_THRESHOLD
     from agents.main_agent.retrieval import MainRetriever
 
     resolved_message = _resolve_orchestrator_followup_message(
@@ -612,7 +612,7 @@ def stream_orchestrator_chat(
             yield _sse_event({'type': 'done', **fallback.model_dump()})
             return
 
-        links = _top_source_links(result.chunks)
+        links = select_source_links(result.chunks)
         prompt = _build_link_description_prompt(result.keyword, links)
 
         accumulated = ""
