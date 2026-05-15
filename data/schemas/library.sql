@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS library.books (
   stack_location_normalized TEXT,
   stack_shelf_normalized TEXT,
   search_text_normalized TEXT,
+  embedding vector(1536),
+  embedding_text_hash TEXT,
   raw_data JSONB NOT NULL DEFAULT '{}'::jsonb,
   import_document_id BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -117,3 +119,9 @@ CREATE INDEX IF NOT EXISTS idx_books_stack_shelf_normalized_trgm
 CREATE INDEX IF NOT EXISTS idx_books_search_text_normalized_trgm
   ON library.books
   USING gin (search_text_normalized gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_books_embedding
+  ON library.books
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100)
+  WHERE embedding IS NOT NULL;

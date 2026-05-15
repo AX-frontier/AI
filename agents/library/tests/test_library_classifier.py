@@ -127,6 +127,33 @@ def test_library_book_location_question_prefers_book_location() -> None:
     assert result.intent == "BOOK_LOCATION"
 
 
+def test_overdue_fee_where_question_prefers_library_guide() -> None:
+    result = classify_intent(
+        "연체료는 어디서 채납해?",
+        evidence=RetrievalEvidence(guide_hits=1),
+    )
+
+    assert result.intent == "LIBRARY_GUIDE"
+
+
+def test_library_policy_phrase_prefers_library_guide_even_with_book_hits() -> None:
+    result = classify_intent(
+        "학술정보관규정 알려줘",
+        evidence=RetrievalEvidence(book_hits=5, guide_hits=1),
+    )
+
+    assert result.intent == "LIBRARY_GUIDE"
+
+
+def test_staff_responsibility_question_prefers_library_guide_even_with_book_hits() -> None:
+    result = classify_intent(
+        "목록, 장서관리정책 수립담당자는 누구야?",
+        evidence=RetrievalEvidence(book_hits=5, guide_hits=1),
+    )
+
+    assert result.intent == "LIBRARY_GUIDE"
+
+
 def test_recommendation_question_prefers_book_recommendation() -> None:
     result = classify_intent(
         "도서관에서 볼만한 파이썬 책 추천해줘",

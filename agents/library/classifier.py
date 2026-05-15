@@ -24,6 +24,23 @@ BOOK_TOPIC_SUFFIX_REWRITES = (("입문서", "입문"),)
 LEADING_POSTPOSITIONS = ("에", "에서", "의", "은", "는", "이", "가", "을", "를")
 RECOMMENDATION_HINTS = ("추천", "볼만한", "읽을만", "읽을 만", "비슷한")
 GUIDE_SPECIFIC_TERMS = (
+    "규정",
+    "세칙",
+    "조직",
+    "조직안내",
+    "직원",
+    "담당",
+    "담당자",
+    "누구",
+    "연락처",
+    "메일",
+    "이메일",
+    "전화",
+    "전화번호",
+    "장서관리",
+    "자료수서",
+    "회원제",
+    "faq",
     "운영",
     "시간",
     "이용",
@@ -31,15 +48,38 @@ GUIDE_SPECIFIC_TERMS = (
     "열람실",
     "좌석",
     "예약",
+    "사물함",
+    "시설",
     "반납",
     "대출",
     "연장",
+    "연체료",
+    "납부",
+    "결제",
+    "채납",
+    "수납",
     "회원",
     "문의",
     "전자책",
     "전자자료",
     "db",
     "개관",
+)
+GUIDE_PAYMENT_TERMS = ("연체", "연체료", "납부", "결제", "채납", "수납", "벌금", "미납")
+GUIDE_POLICY_TERMS = ("규정", "세칙", "조직", "조직안내", "회원제", "faq")
+GUIDE_STAFF_TERMS = (
+    "관장",
+    "직원",
+    "담당",
+    "담당자",
+    "누구",
+    "연락처",
+    "메일",
+    "이메일",
+    "전화",
+    "전화번호",
+    "장서관리",
+    "자료수서",
 )
 GUIDE_TIME_QUESTION_HINTS = ("오늘", "몇 시", "까지", "열어", "열어요", "닫", "오픈")
 GENERAL_HINTS = (
@@ -309,6 +349,9 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
     has_recommendation_hint = _contains_any(normalized, RECOMMENDATION_HINTS)
     has_generic_library_term = _contains_any(normalized, GENERIC_LIBRARY_TERMS)
     has_guide_specific_term = _contains_any(normalized, GUIDE_SPECIFIC_TERMS)
+    has_guide_payment_term = _contains_any(normalized, GUIDE_PAYMENT_TERMS)
+    has_guide_policy_term = _contains_any(normalized, GUIDE_POLICY_TERMS)
+    has_guide_staff_term = _contains_any(normalized, GUIDE_STAFF_TERMS)
     has_guide_time_question = _contains_any(normalized, GUIDE_TIME_QUESTION_HINTS)
     looks_general = _looks_like_general_message(normalized)
     prefers_physical_book_search = (
@@ -317,6 +360,8 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
     rejects_recommendation = "추천 말고" in normalized
 
     if intent == "BOOK_SEARCH":
+        if has_generic_library_term and has_guide_policy_term and not has_book_hint:
+            bonus -= 1.2
         if _contains_any(normalized, BOOK_TOPIC_HINTS):
             bonus += 1.2
         if has_generic_library_term and has_book_hint:
@@ -331,8 +376,16 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
             bonus += 1.8
         if has_guide_specific_term and not has_book_hint:
             bonus -= 0.8
+        if has_guide_staff_term and not has_book_hint:
+            bonus -= 1.4
 
     if intent == "BOOK_LOCATION":
+        if has_generic_library_term and has_guide_policy_term and not has_book_hint:
+            bonus -= 1.2
+        if has_guide_payment_term and not has_book_hint:
+            bonus -= 1.4
+        if has_guide_staff_term and not has_book_hint:
+            bonus -= 1.3
         if has_location_hint:
             bonus += 1.05
         if has_location_hint and has_book_hint:
@@ -343,16 +396,26 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
             bonus += 0.2
 
     if intent == "BOOK_RECOMMENDATION":
+        if has_generic_library_term and has_guide_policy_term and not has_recommendation_hint:
+            bonus -= 1.2
         if has_recommendation_hint and has_book_hint:
             bonus += 1.45
         if has_location_hint:
             bonus -= 0.65
         if rejects_recommendation and has_recommendation_hint:
             bonus -= 1.35
+        if has_guide_staff_term and not has_book_hint:
+            bonus -= 1.2
 
     if intent == "LIBRARY_GUIDE":
+        if has_generic_library_term and has_guide_policy_term:
+            bonus += 1.4
         if has_guide_specific_term:
             bonus += 0.8
+        if has_guide_payment_term:
+            bonus += 1.25
+        if has_guide_staff_term:
+            bonus += 1.45
         if has_guide_time_question:
             bonus += 0.7
         if prefers_physical_book_search:

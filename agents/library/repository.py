@@ -22,6 +22,15 @@ class LibraryRepository(Protocol):
     ) -> list[BookRecord]:
         ...
 
+    def search_books_by_embedding(
+        self,
+        query_embedding: list[float],
+        limit: int = 5,
+        *,
+        min_score: float = 0.35,
+    ) -> list[BookRecord]:
+        ...
+
     def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
         ...
 
@@ -87,6 +96,7 @@ class PostgresLibraryRepository:
               location_symbol,
               stack_location,
               stack_shelf,
+              isbn,
               (
                 CASE
                   WHEN lower(title) = lower(:keyword) THEN 10.0
@@ -204,6 +214,50 @@ class PostgresLibraryRepository:
                 {"pattern": f"%{safe_keyword}%", "limit": limit},
             ).mappings()
             return [GuideDocRecord(**row) for row in rows]
+
+    def search_books_by_embedding(
+        self,
+        query_embedding: list[float],
+        limit: int = 5,
+        *,
+        min_score: float = 0.35,
+    ) -> list[BookRecord]:
+        """library.books.embedding을 기준으로 의미가 가까운 소장 도서를 검색한다."""
+        embedding_literal = "[" + ",".join(str(value) for value in query_embedding) + "]"
+        query = text(
+            """
+            SELECT
+              id,
+              bib_no,
+              reg_no,
+              title,
+              author,
+              publisher,
+              publish_year,
+              holding_call_no,
+              material_type,
+              location_symbol,
+              stack_location,
+              stack_shelf,
+              isbn,
+              1 - (embedding <=> CAST(:embedding AS vector)) AS semantic_score
+            FROM library.books
+            WHERE embedding IS NOT NULL
+              AND 1 - (embedding <=> CAST(:embedding AS vector)) >= :min_score
+            ORDER BY semantic_score DESC, title ASC, id ASC
+            LIMIT :limit
+            """
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                query,
+                {
+                    "embedding": embedding_literal,
+                    "min_score": min_score,
+                    "limit": limit,
+                },
+            ).mappings()
+            return [BookRecord(**{key: row[key] for key in BookRecord.__dataclass_fields__}) for row in rows]
 
     def search_guide_chunks_by_keyword(
         self,

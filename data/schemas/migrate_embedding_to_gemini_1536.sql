@@ -19,4 +19,20 @@ CREATE INDEX IF NOT EXISTS idx_guide_doc_chunks_embedding
   USING ivfflat (embedding vector_cosine_ops)
   WITH (lists = 100);
 
+DROP INDEX IF EXISTS library.idx_books_embedding;
+ALTER TABLE library.books
+  ADD COLUMN IF NOT EXISTS embedding vector(1536);
+ALTER TABLE library.books
+  ADD COLUMN IF NOT EXISTS embedding_text_hash TEXT;
+UPDATE library.books
+SET embedding = NULL,
+    embedding_text_hash = NULL
+WHERE embedding IS NOT NULL
+   OR embedding_text_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_books_embedding
+  ON library.books
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100)
+  WHERE embedding IS NOT NULL;
+
 COMMIT;

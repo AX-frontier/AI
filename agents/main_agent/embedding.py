@@ -19,6 +19,9 @@ class EmbeddingProvider(Protocol):
     def embed_document(self, text: str) -> list[float]:
         ...
 
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        ...
+
 
 class DeterministicEmbeddingProvider:
     """LLM/embedding API가 붙기 전까지 테스트와 로컬 개발에 쓰는 결정적 embedding."""
@@ -31,6 +34,9 @@ class DeterministicEmbeddingProvider:
 
     def embed_document(self, text: str) -> list[float]:
         return self._embed(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_document(text) for text in texts]
 
     def _embed(self, text: str) -> list[float]:
         digest = hashlib.sha256(text.encode("utf-8")).digest()
@@ -58,6 +64,9 @@ class E5EmbeddingProvider:
 
     def embed_document(self, text: str) -> list[float]:
         return self._encode(f"passage: {text}")
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_document(text) for text in texts]
 
     def _encode(self, text: str) -> list[float]:
         vector = self._model.encode(text, normalize_embeddings=True)
@@ -87,6 +96,9 @@ class GeminiEmbeddingProvider:
 
     def embed_document(self, text: str) -> list[float]:
         return self._embed(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_document(text) for text in texts]
 
     def _embed(self, text: str) -> list[float]:
         response = self._client.models.embed_content(
@@ -122,7 +134,15 @@ class OpenAIEmbeddingProvider:
     def embed_document(self, text: str) -> list[float]:
         return self._embed(text)
 
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        return self._embed_many(texts)
+
     def _embed(self, text: str) -> list[float]:
+        return self._embed_many([text])[0]
+
+    def _embed_many(self, texts: list[str]) -> list[list[float]]:
         response = requests.post(
             "https://api.openai.com/v1/embeddings",
             headers={
@@ -131,7 +151,7 @@ class OpenAIEmbeddingProvider:
             },
             json={
                 "model": self.model_name,
-                "input": text,
+                "input": texts,
                 "dimensions": self.dimensions,
             },
             timeout=60,
@@ -139,14 +159,21 @@ class OpenAIEmbeddingProvider:
         response.raise_for_status()
         payload = response.json()
         data = payload.get("data") or []
-        if not data or "embedding" not in data[0]:
+        if len(data) != len(texts):
+            raise RuntimeError("OpenAI embedding response count did not match input count.")
+        embeddings: list[list[float]] = []
+        for item in sorted(data, key=lambda value: int(value.get("index", 0))):
+            if "embedding" not in item:
+                raise RuntimeError("OpenAI embedding response did not include embedding.")
+            values = [float(value) for value in item["embedding"]]
+            if len(values) != self.dimensions:
+                raise ValueError(
+                    f"Embedding dimension mismatch: expected {self.dimensions}, got {len(values)}"
+                )
+            embeddings.append(values)
+        if len(embeddings) != len(texts):
             raise RuntimeError("OpenAI embedding response did not include embedding.")
-        values = [float(value) for value in data[0]["embedding"]]
-        if len(values) != self.dimensions:
-            raise ValueError(
-                f"Embedding dimension mismatch: expected {self.dimensions}, got {len(values)}"
-            )
-        return values
+        return embeddings
 
 
 @lru_cache(maxsize=1)
