@@ -237,6 +237,10 @@ def _get_valid_followup_memory(conversation_uid: str) -> dict[str, str] | None:
     return memory
 
 
+def _sse_event(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
 def _build_route_response(
     request: OrchestratorRouteRequest,
     resolved: ResolvedRoute,
@@ -429,7 +433,7 @@ def stream_orchestrator_chat(
     )
     route_result = _build_route_response(request, resolved_route)
 
-    yield f"data: {json.dumps({'type': 'routing', 'targetAgent': route_result.targetAgent, 'intent': route_result.intent, 'routingMode': route_result.routingMode, 'routingReasonCode': route_result.routingReasonCode})}\n\n"
+    yield _sse_event({'type': 'routing', 'targetAgent': route_result.targetAgent, 'intent': route_result.intent, 'routingMode': route_result.routingMode, 'routingReasonCode': route_result.routingReasonCode})
 
     if route_result.targetAgent == "MAIN":
         repo = main_repository or get_main_chunk_repository()
@@ -439,7 +443,7 @@ def stream_orchestrator_chat(
 
         if not result.chunks or result.chunks[0].score < MAIN_VECTOR_THRESHOLD:
             fallback = build_main_fallback_response(result.keyword, "관련 공지를 찾지 못했습니다.")
-            yield f"data: {json.dumps({'type': 'done', **fallback.model_dump()})}\n\n"
+            yield _sse_event({'type': 'done', **fallback.model_dump()})
             return
 
         links = _top_source_links(result.chunks)
@@ -449,7 +453,7 @@ def stream_orchestrator_chat(
         try:
             for chunk in llm.generate_stream(prompt):
                 accumulated += chunk
-                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                yield _sse_event({'type': 'chunk', 'text': chunk})
         except Exception:
             accumulated = "\n".join(_default_link_description(l) for l in links)
 
@@ -461,7 +465,7 @@ def stream_orchestrator_chat(
 
         from agents.main_agent.api.schemas import MainSource
         sources = [MainSource(title=c.title, url=c.url, documentId=c.document_id, chunkId=c.chunk_id, category=c.category, postedDate=c.posted_date, score=round(c.score, 3)) for c in result.chunks]
-        yield f"data: {json.dumps({'type': 'done', 'targetAgent': 'MAIN', 'intent': 'SCHOOL_NOTICE_QA', 'answer': final_answer, 'sources': [s.model_dump() for s in sources], 'confidence': round(max(0.5, min(0.95, result.chunks[0].score)), 3), 'fallbackUsed': False, 'fallbackReason': None, 'searchKeyword': result.keyword, 'resultCount': len(result.chunks), 'requiresDocumentInput': False})}\n\n"
+        yield _sse_event({'type': 'done', 'targetAgent': 'MAIN', 'intent': 'SCHOOL_NOTICE_QA', 'answer': final_answer, 'sources': [s.model_dump() for s in sources], 'confidence': round(max(0.5, min(0.95, result.chunks[0].score)), 3), 'fallbackUsed': False, 'fallbackReason': None, 'searchKeyword': result.keyword, 'resultCount': len(result.chunks), 'requiresDocumentInput': False})
         return
 
     if route_result.targetAgent == "LIBRARY":
@@ -476,7 +480,7 @@ def stream_orchestrator_chat(
             repository=library_repository,
             llm_client=llm,
         ):
-            yield f"data: {json.dumps(event)}\n\n"
+            yield _sse_event(event)
         return
 
     # DOCUMENT_REVIEW 및 나머지 케이스: 동기 실행 후 chunk + done 이벤트로 전송
@@ -489,7 +493,7 @@ def stream_orchestrator_chat(
         main_llm_client=main_llm_client,
         library_repository=library_repository,
     )
-    yield f"data: {json.dumps({'type': 'done', **response.model_dump()})}\n\n"
+    yield _sse_event({'type': 'done', **response.model_dump()})
 
 
 def _resolve_orchestrator_followup_message(conversation_uid: str, message: str) -> str:

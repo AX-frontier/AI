@@ -14,7 +14,7 @@ from agents.main_agent.models import MainChunkRecord
 from agents.main_agent.repository import get_main_chunk_repository
 from agents.orchestrator.api.router import get_routing_evidence_collector
 from agents.orchestrator.routing.evidence import AgentEvidence, RoutingEvidence
-from agents.orchestrator.service import _ORCH_FOLLOWUP_MEMORY
+from agents.orchestrator.service import _ORCH_FOLLOWUP_MEMORY, _sse_event
 from app import app
 
 os.environ["MAIN_AGENT_EMBEDDING_PROVIDER"] = "deterministic"
@@ -98,6 +98,13 @@ class OrchestratorLibraryMockRepository:
         min_score: float = 0.35,
     ) -> list:
         return []
+
+
+def test_sse_event_preserves_korean_text_for_debuggability() -> None:
+    event = _sse_event({"type": "chunk", "text": "문서 검토 결과입니다."})
+
+    assert "문서 검토 결과" in event
+    assert "\\ubb38" not in event
 
 
 def test_orchestrator_route_endpoint_returns_main_for_school_notice_query() -> None:
