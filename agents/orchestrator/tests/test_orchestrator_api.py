@@ -142,6 +142,103 @@ def test_orchestrator_route_endpoint_returns_main_for_school_notice_query() -> N
     assert payload["routingReasonCode"] == "FRESH_DEFAULT"
 
 
+def test_orchestrator_route_endpoint_returns_fallback_for_ambiguous_low_margin() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.83, reason="main close hit"),
+            library=AgentEvidence(score=0.79, reason="library close hit"),
+            document_review=AgentEvidence(score=0.05, reason="weak document hit"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/route",
+        json={
+            "queryUid": "q_amb_001",
+            "traceId": "tr_amb_001",
+            "conversationUid": "conv_amb_001",
+            "message": "링크 정리해줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "FALLBACK"
+    assert payload["intent"] == "FALLBACK"
+    assert payload["routingMode"] == "FRESH"
+    assert payload["routingReasonCode"] == "AMBIGUOUS_LOW_MARGIN"
+    assert payload["confidence"] == 0.83
+    assert "모호" in payload["reason"]
+    assert "학교공지 안내" in payload["reason"]
+    assert "도서 검색" in payload["reason"]
+    assert "문서 검토" in payload["reason"]
+    assert payload["evidence"]["mainScore"] == 0.83
+    assert payload["evidence"]["libraryScore"] == 0.79
+
+
+def test_orchestrator_route_endpoint_returns_fallback_for_low_top1_confidence() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.598, reason="main weak hit"),
+            library=AgentEvidence(score=0.0, reason="weak library"),
+            document_review=AgentEvidence(score=0.0, reason="weak document"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/route",
+        json={
+            "queryUid": "q_amb_003",
+            "traceId": "tr_amb_003",
+            "conversationUid": "conv_amb_003",
+            "message": "복수전공 신청 기간 알려줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "FALLBACK"
+    assert payload["routingReasonCode"] == "AMBIGUOUS_LOW_MARGIN"
+
+
+def test_orchestrator_route_endpoint_keeps_original_route_when_margin_is_not_low() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.83, reason="main hit"),
+            library=AgentEvidence(score=0.74, reason="library hit"),
+            document_review=AgentEvidence(score=0.05, reason="weak document hit"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/route",
+        json={
+            "queryUid": "q_amb_002",
+            "traceId": "tr_amb_002",
+            "conversationUid": "conv_amb_002",
+            "message": "복수전공 신청 기간 알려줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "LIBRARY"
+    assert payload["intent"] == "LIBRARY"
+    assert payload["routingReasonCode"] == "FRESH_DEFAULT"
+
+
 def test_orchestrator_route_endpoint_returns_library_for_library_query() -> None:
     _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
@@ -233,7 +330,7 @@ def test_orchestrator_route_endpoint_prioritizes_explicit_document_review() -> N
     assert payload["evidence"]["documentReviewScore"] == 0.85
 
 
-def test_orchestrator_route_endpoint_returns_main_for_unrelated_query() -> None:
+def test_orchestrator_route_endpoint_returns_fallback_for_unrelated_low_confidence_query() -> None:
     _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
@@ -258,8 +355,9 @@ def test_orchestrator_route_endpoint_returns_main_for_unrelated_query() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["targetAgent"] == "MAIN"
-    assert payload["intent"] == "MAIN"
+    assert payload["targetAgent"] == "FALLBACK"
+    assert payload["intent"] == "FALLBACK"
+    assert payload["routingReasonCode"] == "AMBIGUOUS_LOW_MARGIN"
     assert "evidence" in payload
 
 
@@ -395,7 +493,7 @@ def test_orchestrator_chat_endpoint_requests_document_input_when_document_body_m
     assert "문서 본문" in payload["answer"]
 
 
-def test_orchestrator_chat_endpoint_routes_main_for_unrelated_query() -> None:
+def test_orchestrator_chat_endpoint_returns_fallback_for_unrelated_ambiguous_query() -> None:
     _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
@@ -423,7 +521,134 @@ def test_orchestrator_chat_endpoint_routes_main_for_unrelated_query() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["targetAgent"] == "MAIN"
+    assert payload["targetAgent"] == "FALLBACK"
+    assert payload["intent"] == "FALLBACK"
+    assert payload["fallbackUsed"] is True
+
+
+def test_orchestrator_chat_endpoint_returns_fallback_for_ambiguous_low_margin() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.83, reason="main close hit"),
+            library=AgentEvidence(score=0.79, reason="library close hit"),
+            document_review=AgentEvidence(score=0.05, reason="weak document hit"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/chat",
+        json={
+            "queryUid": "q_amb_chat_001",
+            "traceId": "tr_amb_chat_001",
+            "conversationUid": "conv_amb_chat_001",
+            "message": "이거 처리해줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "FALLBACK"
+    assert payload["intent"] == "FALLBACK"
+    assert payload["fallbackUsed"] is True
+    assert payload["confidence"] == 0.0
+    assert "모호" in payload["answer"]
+    assert "학교공지 안내" in payload["answer"]
+    assert "도서 검색" in payload["answer"]
+    assert "문서 검토" in payload["answer"]
+
+
+def test_orchestrator_chat_endpoint_returns_fallback_for_vague_query_tokens() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.9, reason="main hit"),
+            library=AgentEvidence(score=0.1, reason="weak library"),
+            document_review=AgentEvidence(score=0.0, reason="weak document"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/chat",
+        json={
+            "queryUid": "q_amb_chat_002",
+            "traceId": "tr_amb_chat_002",
+            "conversationUid": "conv_amb_chat_002",
+            "message": "이거 처리해줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "FALLBACK"
+    assert payload["intent"] == "FALLBACK"
+    assert payload["fallbackUsed"] is True
+
+
+def test_orchestrator_chat_endpoint_keeps_library_for_explicit_book_query_even_with_low_top1() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.3, reason="weak main"),
+            library=AgentEvidence(score=0.6, reason="library book hit"),
+            document_review=AgentEvidence(score=0.0, reason="weak document"),
+        )
+    )
+    app.dependency_overrides[get_library_repository] = lambda: OrchestratorLibraryMockRepository()
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/chat",
+        json={
+            "queryUid": "q_lib_keep_001",
+            "traceId": "tr_lib_keep_001",
+            "conversationUid": "conv_lib_keep_001",
+            "message": "도서관에 AI관련 책이 있어?",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "LIBRARY"
+    assert payload["intent"] in {"BOOK_SEARCH", "BOOK_LOCATION", "BOOK_RECOMMENDATION"}
+    assert payload["fallbackUsed"] is False
+
+
+def test_orchestrator_chat_endpoint_keeps_library_when_main_and_library_are_both_high() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.968, reason="main high hit"),
+            library=AgentEvidence(score=0.98, reason="library high hit"),
+            document_review=AgentEvidence(score=0.0, reason="weak document"),
+        )
+    )
+    app.dependency_overrides[get_library_repository] = lambda: OrchestratorLibraryMockRepository()
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/chat",
+        json={
+            "queryUid": "q_lib_keep_002",
+            "traceId": "tr_lib_keep_002",
+            "conversationUid": "conv_lib_keep_002",
+            "message": "도서관에 AI관련 책이 있어?",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "LIBRARY"
     assert payload["fallbackUsed"] is False
 
 

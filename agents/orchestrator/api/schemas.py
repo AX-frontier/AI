@@ -15,6 +15,7 @@ RoutingReasonCode = Literal[
     "USER_OVERRIDE",
     "FOLLOWUP_REUSE",
     "EVIDENCE_SWITCH",
+    "AMBIGUOUS_LOW_MARGIN",
 ]
 
 

@@ -35,6 +35,19 @@ logger = logging.getLogger(__name__)
 _ORCH_FOLLOWUP_MEMORY: dict[str, dict[str, str]] = {}
 _ORCH_FOLLOWUP_TTL = timedelta(minutes=15)
 _FOLLOWUP_STICKY_MARGIN = 0.10
+AMBIGUOUS_MARGIN_THRESHOLD = 0.08
+AMBIGUOUS_TOP1_MAX_THRESHOLD = 0.65
+AMBIGUOUS_SCORE_THRESHOLD = 1.0
+_AMBIGUOUS_VAGUE_TOKENS = (
+    "이거",
+    "저거",
+    "그거",
+    "이것",
+    "저것",
+    "그것",
+    "처리해줘",
+    "알아서",
+)
 
 
 @dataclass(frozen=True)
@@ -42,6 +55,12 @@ class ResolvedRoute:
     route: OrchestratorRouteResponse
     routing_mode: str
     routing_reason_code: str
+
+
+@dataclass(frozen=True)
+class ExplicitIntentGate:
+    target_agent: str
+    reason: str
 
 
 def route_query(
@@ -56,6 +75,7 @@ def route_query(
         request.message,
         evidence_collector=evidence_collector,
         router=router,
+        allow_ambiguous_fallback=True,
     )
     return _build_route_response(request, resolved)
 
@@ -66,32 +86,56 @@ def resolve_target_agent(
     *,
     evidence_collector: RoutingEvidenceCollector | None = None,
     router: EvidenceBasedRouter | None = None,
+    allow_ambiguous_fallback: bool = False,
 ) -> ResolvedRoute:
     started_at = datetime.now(UTC)
     collector = evidence_collector or RoutingEvidenceCollector()
     route_router = router or EvidenceBasedRouter()
 
     evidence = collector.collect(message)
-    fresh_decision = route_router.route(evidence)
-    fresh_response = OrchestratorRouteResponse(
-        queryUid="",
-        traceId="",
-        conversationUid=conversation_uid,
-        targetAgent=fresh_decision.target_agent,
-        intent=fresh_decision.intent,
-        confidence=round(fresh_decision.confidence, 3),
-        reason=fresh_decision.reason,
-        evidence=RoutingEvidencePayload(
-            mainScore=evidence.main.score,
-            libraryScore=evidence.library.score,
-            documentReviewScore=evidence.document_review.score,
-            mainReason=evidence.main.reason,
-            libraryReason=evidence.library.reason,
-            documentReviewReason=evidence.document_review.reason,
-        ),
-        routingMode="FRESH",
-        routingReasonCode="FRESH_DEFAULT",
-    )
+    explicit_gate = _resolve_explicit_intent_gate(message, evidence)
+    if explicit_gate is not None:
+        explicit_confidence = round(_agent_score(evidence, explicit_gate.target_agent), 3)
+        fresh_response = OrchestratorRouteResponse(
+            queryUid="",
+            traceId="",
+            conversationUid=conversation_uid,
+            targetAgent=explicit_gate.target_agent,
+            intent=explicit_gate.target_agent,
+            confidence=explicit_confidence,
+            reason=explicit_gate.reason,
+            evidence=RoutingEvidencePayload(
+                mainScore=evidence.main.score,
+                libraryScore=evidence.library.score,
+                documentReviewScore=evidence.document_review.score,
+                mainReason=evidence.main.reason,
+                libraryReason=evidence.library.reason,
+                documentReviewReason=evidence.document_review.reason,
+            ),
+            routingMode="FRESH",
+            routingReasonCode="FRESH_DEFAULT",
+        )
+    else:
+        fresh_decision = route_router.route(evidence)
+        fresh_response = OrchestratorRouteResponse(
+            queryUid="",
+            traceId="",
+            conversationUid=conversation_uid,
+            targetAgent=fresh_decision.target_agent,
+            intent=fresh_decision.intent,
+            confidence=round(fresh_decision.confidence, 3),
+            reason=fresh_decision.reason,
+            evidence=RoutingEvidencePayload(
+                mainScore=evidence.main.score,
+                libraryScore=evidence.library.score,
+                documentReviewScore=evidence.document_review.score,
+                mainReason=evidence.main.reason,
+                libraryReason=evidence.library.reason,
+                documentReviewReason=evidence.document_review.reason,
+            ),
+            routingMode="FRESH",
+            routingReasonCode="FRESH_DEFAULT",
+        )
 
     override = _parse_user_agent_override(message)
     if override is not None:
@@ -117,7 +161,35 @@ def resolve_target_agent(
         return ResolvedRoute(overridden, "FRESH", "USER_OVERRIDE")
 
     memory = _get_valid_followup_memory(conversation_uid)
+    top_target, top_score, second_score = _top_two_scores(evidence)
     if not _looks_followup(message) or memory is None:
+        if allow_ambiguous_fallback and _is_ambiguous_query(
+            message,
+            explicit_gate_applied=explicit_gate is not None,
+            top_target=top_target,
+            top_score=top_score,
+            second_score=second_score,
+        ):
+            ambiguous_response = fresh_response.model_copy(
+                update={
+                    "targetAgent": "FALLBACK",
+                    "intent": "FALLBACK",
+                    "confidence": round(top_score, 3),
+                    "reason": _build_ambiguous_reask_message(),
+                    "routingMode": "FRESH",
+                    "routingReasonCode": "AMBIGUOUS_LOW_MARGIN",
+                }
+            )
+            logger.info(
+                "orchestrator.route resolved conversation_uid=%s target_agent=%s mode=%s reason_code=%s confidence=%.3f elapsed_ms=%d",
+                conversation_uid,
+                ambiguous_response.targetAgent,
+                "FRESH",
+                "AMBIGUOUS_LOW_MARGIN",
+                ambiguous_response.confidence,
+                int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            )
+            return ResolvedRoute(ambiguous_response, "FRESH", "AMBIGUOUS_LOW_MARGIN")
         logger.info(
             "orchestrator.route resolved conversation_uid=%s target_agent=%s mode=%s reason_code=%s confidence=%.3f elapsed_ms=%d",
             conversation_uid,
@@ -130,7 +202,6 @@ def resolve_target_agent(
         return ResolvedRoute(fresh_response, "FRESH", "FRESH_DEFAULT")
 
     previous_target = memory.get("targetAgent")
-    top_target, top_score, second_score = _top_two_scores(evidence)
     if previous_target and previous_target != top_target:
         if top_score - second_score < _FOLLOWUP_STICKY_MARGIN and _agent_score(evidence, previous_target) > 0:
             sticky = fresh_response.model_copy(
@@ -195,6 +266,89 @@ def _top_two_scores(evidence) -> tuple[str, float, float]:
     top_target, top_score = ranked[0]
     second_score = ranked[1][1]
     return top_target, top_score, second_score
+
+
+def _is_ambiguous_query(
+    message: str,
+    *,
+    explicit_gate_applied: bool,
+    top_target: str,
+    top_score: float,
+    second_score: float,
+) -> bool:
+    if explicit_gate_applied:
+        return False
+    score = _compute_ambiguity_score(
+        message,
+        top_target=top_target,
+        top_score=top_score,
+        second_score=second_score,
+    )
+    return score >= AMBIGUOUS_SCORE_THRESHOLD
+
+
+def _compute_ambiguity_score(
+    message: str,
+    *,
+    top_target: str,
+    top_score: float,
+    second_score: float,
+) -> float:
+    score = 0.0
+    margin_low = top_score - second_score < AMBIGUOUS_MARGIN_THRESHOLD
+    confidence_low_main = top_target == "MAIN" and top_score < AMBIGUOUS_TOP1_MAX_THRESHOLD
+    vague_query = _looks_vague_query(message)
+    if margin_low:
+        score += 1.0
+    if confidence_low_main:
+        score += 1.0
+    if vague_query:
+        score += 1.0
+    return score
+
+
+def _looks_vague_query(message: str) -> bool:
+    normalized = (message or "").strip().lower()
+    if not normalized:
+        return True
+    if len(normalized) <= 8:
+        return True
+    return any(token in normalized for token in _AMBIGUOUS_VAGUE_TOKENS)
+
+
+def _looks_explicit_book_query(message: str) -> bool:
+    normalized = (message or "").lower().strip()
+    if not normalized:
+        return False
+    return any(token in normalized for token in ("책", "도서", "저자", "isbn", "청구기호"))
+
+
+def _looks_explicit_document_review_query(message: str) -> bool:
+    normalized = (message or "").lower().strip()
+    if not normalized:
+        return False
+    return any(token in normalized for token in ("문서 검토", "전자결재", "기안", "공문", "맞춤법", "교정"))
+
+
+def _resolve_explicit_intent_gate(message: str, evidence) -> ExplicitIntentGate | None:
+    if _looks_explicit_book_query(message) and evidence.library.score > 0:
+        return ExplicitIntentGate(
+            target_agent="LIBRARY",
+            reason=f"explicit intent gate selected LIBRARY: {evidence.library.reason}",
+        )
+    if _looks_explicit_document_review_query(message) and evidence.document_review.score > 0:
+        return ExplicitIntentGate(
+            target_agent="DOCUMENT_REVIEW",
+            reason=f"explicit intent gate selected DOCUMENT_REVIEW: {evidence.document_review.reason}",
+        )
+    return None
+
+
+def _build_ambiguous_reask_message() -> str:
+    return (
+        "요청 의도가 모호합니다. 아래 중 하나로 다시 입력해 주세요: "
+        "1) 학교공지 안내 2) 도서 검색 3) 문서 검토"
+    )
 
 
 def _agent_score(evidence, target: str) -> float:
@@ -289,6 +443,7 @@ def execute_routed_query(
             resolved_message,
             evidence_collector=evidence_collector,
             router=router,
+            allow_ambiguous_fallback=True,
         )
         route_result = _build_route_response(request, resolved_route)
         logger.info(
@@ -391,6 +546,16 @@ def execute_routed_query(
             )
             return response
 
+        if route_result.targetAgent == "FALLBACK":
+            logger.info(
+                "orchestrator.chat done query_uid=%s target_agent=%s fallback_reason=%s elapsed_ms=%d",
+                request.queryUid,
+                route_result.targetAgent,
+                route_result.reason,
+                int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            )
+            return _build_fallback_response(route_result.reason)
+
         logger.info(
             "orchestrator.chat fallback query_uid=%s elapsed_ms=%d",
             request.queryUid,
@@ -418,7 +583,7 @@ def stream_orchestrator_chat(
     library_repository: LibraryRepository | None = None,
 ) -> Iterator[str]:
     """라우팅 결과를 먼저 전송하고 MAIN 에이전트는 LLM 응답을 청크 단위로 스트리밍한다."""
-    from agents.main_agent.generator import _build_link_description_prompt, _top_source_links, _format_link_guide_answer, _default_link_description, build_main_fallback_response, MAIN_VECTOR_THRESHOLD
+    from agents.main_agent.generator import _build_link_description_prompt, select_source_links, _format_link_guide_answer, _default_link_description, build_main_fallback_response, MAIN_VECTOR_THRESHOLD
     from agents.main_agent.retrieval import MainRetriever
 
     resolved_message = _resolve_orchestrator_followup_message(
@@ -430,6 +595,7 @@ def stream_orchestrator_chat(
         resolved_message,
         evidence_collector=evidence_collector,
         router=router,
+        allow_ambiguous_fallback=True,
     )
     route_result = _build_route_response(request, resolved_route)
 
@@ -446,7 +612,7 @@ def stream_orchestrator_chat(
             yield _sse_event({'type': 'done', **fallback.model_dump()})
             return
 
-        links = _top_source_links(result.chunks)
+        links = select_source_links(result.chunks)
         prompt = _build_link_description_prompt(result.keyword, links)
 
         accumulated = ""

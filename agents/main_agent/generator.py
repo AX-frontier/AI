@@ -9,6 +9,10 @@ from agents.main_agent.models import MainChunkRecord
 from agents.main_agent.retrieval import MainSearchResult
 
 MAIN_VECTOR_THRESHOLD = 0.45
+MAIN_LINK_AMBIGUOUS_ABS_GAP_THRESHOLD = 0.05
+MAIN_LINK_AMBIGUOUS_RATIO_THRESHOLD = 1.08
+MAIN_LINK_SINGLE_TOP1_THRESHOLD = 0.85
+MAIN_LINK_DEFAULT_LIMIT = 3
 
 
 @dataclass(frozen=True)
@@ -64,7 +68,7 @@ def build_main_fallback_response(keyword: str, reason: str) -> MainChatResponse:
 
 
 def _compose_answer(result: MainSearchResult) -> str:
-    links = _top_source_links(result.chunks)
+    links = select_source_links(result.chunks)
     descriptions = [_default_link_description(link) for link in links]
     return _format_link_guide_answer(result.keyword, links, descriptions)
 
@@ -73,7 +77,7 @@ def _generate_answer(result: MainSearchResult, llm_client: LLMClient | None) -> 
     if llm_client is None:
         return _compose_answer(result)
 
-    links = _top_source_links(result.chunks)
+    links = select_source_links(result.chunks)
     if not links:
         return _format_link_guide_answer(result.keyword, links, [])
 
@@ -90,6 +94,8 @@ def _generate_answer(result: MainSearchResult, llm_client: LLMClient | None) -> 
 
 
 def _top_source_links(chunks: list[MainChunkRecord], limit: int = 3) -> list[_SourceLink]:
+    if limit <= 0:
+        return []
     links: list[_SourceLink] = []
     seen_urls: set[str] = set()
     for chunk in chunks:
@@ -110,7 +116,42 @@ def _top_source_links(chunks: list[MainChunkRecord], limit: int = 3) -> list[_So
     return links
 
 
+def select_source_links(chunks: list[MainChunkRecord]) -> list[_SourceLink]:
+    limit = _decide_link_limit(chunks)
+    return _top_source_links(chunks, limit=limit)
+
+
+def _decide_link_limit(chunks: list[MainChunkRecord]) -> int:
+    if not chunks:
+        return 0
+    if len(chunks) < 2:
+        return 1
+    top1 = chunks[0].score
+    top2 = chunks[1].score
+    if top2 <= 0:
+        return 1 if top1 >= MAIN_LINK_SINGLE_TOP1_THRESHOLD else MAIN_LINK_DEFAULT_LIMIT
+
+    abs_gap = top1 - top2
+    ratio = top1 / top2
+    is_ambiguous_boundary = (
+        abs_gap < MAIN_LINK_AMBIGUOUS_ABS_GAP_THRESHOLD
+        or ratio < MAIN_LINK_AMBIGUOUS_RATIO_THRESHOLD
+    )
+    if is_ambiguous_boundary:
+        return MAIN_LINK_DEFAULT_LIMIT
+
+    if top1 >= MAIN_LINK_SINGLE_TOP1_THRESHOLD:
+        return 1
+    return MAIN_LINK_DEFAULT_LIMIT
+
+
 def _build_link_description_prompt(keyword: str, links: list[_SourceLink]) -> str:
+    if len(links) == 1:
+        return _build_single_link_description_prompt(keyword, links[0])
+    return _build_multi_link_description_prompt(keyword, links)
+
+
+def _build_multi_link_description_prompt(keyword: str, links: list[_SourceLink]) -> str:
     source_blocks = []
     for index, link in enumerate(links, start=1):
         source_blocks.append(
@@ -136,6 +177,22 @@ def _build_link_description_prompt(keyword: str, links: list[_SourceLink]) -> st
     )
 
 
+def _build_single_link_description_prompt(keyword: str, link: _SourceLink) -> str:
+    return (
+        "당신은 한성대학교 공식 공지와 학사 안내 검색 결과를 설명하는 AI입니다.\n"
+        "아래 단일 source를 바탕으로 한국어 3~4문장으로 상세 안내하세요.\n"
+        "핵심 내용, 대상, 일정(있으면), 유의사항(있으면)을 포함하고 검색 근거 밖의 추측은 금지합니다.\n"
+        "URL은 절대 출력하지 마세요.\n\n"
+        f"사용자 질문: {keyword}\n\n"
+        "검색 source:\n"
+        f"title: {link.title}\n"
+        f"url: {link.url}\n"
+        f"category: {link.category or '정보 없음'}\n"
+        f"posted_date: {link.posted_date or '정보 없음'}\n"
+        f"snippet: {link.snippet}"
+    )
+
+
 def _parse_link_descriptions(raw_answer: str, expected_count: int) -> list[str] | None:
     if not raw_answer or expected_count <= 0:
         return None
@@ -154,8 +211,9 @@ def _parse_link_descriptions(raw_answer: str, expected_count: int) -> list[str] 
         return descriptions if all(descriptions) else None
 
     lines = [_clean_description(line) for line in raw_answer.splitlines() if line.strip()]
-    if expected_count == 1 and len(lines) == 1 and lines[0]:
-        return lines
+    if expected_count == 1 and lines:
+        merged = " ".join(line for line in lines if line)
+        return [merged] if merged else None
 
     return None
 
@@ -175,6 +233,21 @@ def _format_link_guide_answer(
         return (
             f'"{keyword}"와 관련해 answer에 표시할 공식 링크를 찾지 못했습니다.\n'
             "검색 결과의 전체 source 목록을 확인해 주세요."
+        )
+
+    if len(links) == 1:
+        link = links[0]
+        description = descriptions[0] if descriptions and descriptions[0] else _default_link_description(link)
+        return "\n".join(
+            [
+                f'"{keyword}"와 관련해 확인할 수 있는 공식 링크를 찾았습니다.',
+                "검색 결과에서 관련도가 가장 높은 대표 링크 1건을 안내드립니다.",
+                "",
+                f"1. {link.title}",
+                f"   {description}",
+                "   이동하시려면 아래 링크를 눌러주세요.",
+                f"   {link.url}",
+            ]
         )
 
     lines = [
@@ -200,7 +273,10 @@ def _format_link_guide_answer(
 
 
 def _default_link_description(link: _SourceLink) -> str:
-    return f"{link.title}와 관련된 한성대학교 공식 안내 링크입니다."
+    return (
+        f"{link.title}와 관련된 한성대학교 공식 안내 링크입니다. "
+        "핵심 일정과 대상, 신청 또는 확인 절차를 본문 기준으로 확인하는 데 도움이 됩니다."
+    )
 
 
 def _chunk_to_source(chunk: MainChunkRecord) -> MainSource:
