@@ -174,7 +174,13 @@ def upsert_library_guide_chunks(
                 connection=connection,
                 source_url=source_url,
             )
-            if existing_doc and _is_unchanged_guide_doc(existing_doc, content_hash):
+            existing_chunk_count = 0
+            if existing_doc:
+                existing_chunk_count = _count_guide_doc_chunks(
+                    connection=connection,
+                    guide_doc_id=int(existing_doc["id"]),
+                )
+            if existing_doc and existing_chunk_count > 0 and _is_unchanged_guide_doc(existing_doc, content_hash):
                 if _needs_guide_doc_metadata_update(existing_doc, title, content_hash):
                     _update_guide_doc_metadata(
                         connection=connection,
@@ -366,6 +372,25 @@ def _update_guide_doc_metadata(
             "content": content,
             "content_hash": content_hash,
         },
+    )
+
+
+def _count_guide_doc_chunks(
+    *,
+    connection: Connection,
+    guide_doc_id: int,
+) -> int:
+    return int(
+        connection.execute(
+            text(
+                """
+                SELECT COUNT(*) AS chunk_count
+                FROM library.guide_doc_chunks
+                WHERE guide_doc_id = :guide_doc_id
+                """
+            ),
+            {"guide_doc_id": guide_doc_id},
+        ).scalar_one()
     )
 
 

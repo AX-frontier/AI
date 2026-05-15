@@ -17,6 +17,7 @@ from agents.main_agent.embedding import EmbeddingProvider
 from agents.main_agent.llm.base import LLMClient
 from agents.main_agent.repository import MainChunkRepository
 from agents.orchestrator.api.schemas import (
+    DataPreparingResponse,
     DocumentReviewInputRequiredResponse,
     OrchestratorChatRequest,
     OrchestratorChatResponse,
@@ -36,8 +37,8 @@ _ORCH_FOLLOWUP_MEMORY: dict[str, dict[str, str]] = {}
 _ORCH_FOLLOWUP_TTL = timedelta(minutes=15)
 _FOLLOWUP_STICKY_MARGIN = 0.10
 AMBIGUOUS_MARGIN_THRESHOLD = 0.08
-AMBIGUOUS_TOP1_MAX_THRESHOLD = 0.65
-AMBIGUOUS_SCORE_THRESHOLD = 1.0
+AMBIGUOUS_TOP1_MAX_THRESHOLD = 0.55
+AMBIGUOUS_SCORE_THRESHOLD = 2.0
 _AMBIGUOUS_VAGUE_TOKENS = (
     "이거",
     "저거",
@@ -47,6 +48,11 @@ _AMBIGUOUS_VAGUE_TOKENS = (
     "그것",
     "처리해줘",
     "알아서",
+)
+_DATA_PREPARING_REASON_CODES = {"NO_CHUNKS", "TOPIC_MISMATCH_NO_DATA"}
+_DATA_PREPARING_MESSAGE = (
+    "관련 안내 데이터가 아직 준비되지 않았습니다. "
+    "분실 장소/건물명/담당 부서(예: 학술정보관, 학생처)로 다시 질문해 주세요."
 )
 
 
@@ -116,7 +122,7 @@ def resolve_target_agent(
             routingReasonCode="FRESH_DEFAULT",
         )
     else:
-        fresh_decision = route_router.route(evidence)
+        fresh_decision = route_router.route(evidence, message)
         fresh_response = OrchestratorRouteResponse(
             queryUid="",
             traceId="",
@@ -161,7 +167,10 @@ def resolve_target_agent(
         return ResolvedRoute(overridden, "FRESH", "USER_OVERRIDE")
 
     memory = _get_valid_followup_memory(conversation_uid)
-    top_target, top_score, second_score = _top_two_scores(evidence)
+    top_target, top_score, second_score = _top_two_scores(
+        evidence,
+        final_scores=fresh_decision.final_scores,
+    )
     if not _looks_followup(message) or memory is None:
         if allow_ambiguous_fallback and _is_ambiguous_query(
             message,
@@ -253,16 +262,19 @@ def resolve_target_agent(
     return ResolvedRoute(fresh_response, "FRESH", "FRESH_DEFAULT")
 
 
-def _top_two_scores(evidence) -> tuple[str, float, float]:
-    ranked = sorted(
-        [
-            ("MAIN", evidence.main.score),
-            ("LIBRARY", evidence.library.score),
-            ("DOCUMENT_REVIEW", evidence.document_review.score),
-        ],
-        key=lambda item: item[1],
-        reverse=True,
-    )
+def _top_two_scores(evidence, final_scores: dict[str, float] | None = None) -> tuple[str, float, float]:
+    if final_scores:
+        ranked = sorted(final_scores.items(), key=lambda item: item[1], reverse=True)
+    else:
+        ranked = sorted(
+            [
+                ("MAIN", evidence.main.score),
+                ("LIBRARY", evidence.library.score),
+                ("DOCUMENT_REVIEW", evidence.document_review.score),
+            ],
+            key=lambda item: item[1],
+            reverse=True,
+        )
     top_target, top_score = ranked[0]
     second_score = ranked[1][1]
     return top_target, top_score, second_score
@@ -277,6 +289,11 @@ def _is_ambiguous_query(
     second_score: float,
 ) -> bool:
     if explicit_gate_applied:
+        return False
+    lowered = (message or "").lower()
+    if top_target == "LIBRARY" and any(token in lowered for token in ("도서관", "학술정보관", "대출", "반납", "연장", "열람실", "개관", "휴관")):
+        return False
+    if top_target == "DOCUMENT_REVIEW" and any(token in lowered for token in ("문서", "전자결재", "검토", "교정", "기안", "공문")):
         return False
     score = _compute_ambiguity_score(
         message,
@@ -331,16 +348,8 @@ def _looks_explicit_document_review_query(message: str) -> bool:
 
 
 def _resolve_explicit_intent_gate(message: str, evidence) -> ExplicitIntentGate | None:
-    if _looks_explicit_book_query(message) and evidence.library.score > 0:
-        return ExplicitIntentGate(
-            target_agent="LIBRARY",
-            reason=f"explicit intent gate selected LIBRARY: {evidence.library.reason}",
-        )
-    if _looks_explicit_document_review_query(message) and evidence.document_review.score > 0:
-        return ExplicitIntentGate(
-            target_agent="DOCUMENT_REVIEW",
-            reason=f"explicit intent gate selected DOCUMENT_REVIEW: {evidence.document_review.reason}",
-        )
+    # explicit keyword rules are now only soft signals in score synthesis (router.py)
+    # and no longer directly decide target agent.
     return None
 
 
@@ -457,7 +466,7 @@ def execute_routed_query(
         )
 
         if route_result.targetAgent == "MAIN":
-            response = run_main_agent(
+            main_response = run_main_agent(
                 MainChatRequest(
                     queryUid=request.queryUid,
                     traceId=request.traceId,
@@ -468,15 +477,16 @@ def execute_routed_query(
                 embedding_provider=main_embedding_provider,
                 llm_client=main_llm_client,
             )
+            response = _maybe_convert_main_fallback_to_data_preparing(main_response)
             _remember_orchestrator_context(
                 str(request.conversationUid),
-                route_result.targetAgent,
+                response.targetAgent,
                 _extract_memory_topic(resolved_message),
             )
             logger.info(
                 "orchestrator.chat done query_uid=%s target_agent=%s elapsed_ms=%d",
                 request.queryUid,
-                route_result.targetAgent,
+                response.targetAgent,
                 int((datetime.now(UTC) - started_at).total_seconds() * 1000),
             )
             return response
@@ -602,14 +612,35 @@ def stream_orchestrator_chat(
     yield _sse_event({'type': 'routing', 'targetAgent': route_result.targetAgent, 'intent': route_result.intent, 'routingMode': route_result.routingMode, 'routingReasonCode': route_result.routingReasonCode})
 
     if route_result.targetAgent == "MAIN":
+        precheck_response = run_main_agent(
+            MainChatRequest(
+                queryUid=request.queryUid,
+                traceId=request.traceId,
+                conversationUid=request.conversationUid,
+                message=resolved_message,
+            ),
+            repository=main_repository,
+            embedding_provider=main_embedding_provider,
+            llm_client=None,
+        )
+        precheck_converted = _maybe_convert_main_fallback_to_data_preparing(precheck_response)
+        if precheck_converted.targetAgent != "MAIN":
+            yield _sse_event({'type': 'done', **precheck_converted.model_dump()})
+            return
+
         repo = main_repository or get_main_chunk_repository()
         embedder = main_embedding_provider or get_embedding_provider()
         llm = main_llm_client or get_llm_client()
         result = MainRetriever(repo, embedder).retrieve(resolved_message.strip())
 
         if not result.chunks or result.chunks[0].score < MAIN_VECTOR_THRESHOLD:
-            fallback = build_main_fallback_response(result.keyword, "관련 공지를 찾지 못했습니다.")
-            yield _sse_event({'type': 'done', **fallback.model_dump()})
+            fallback = build_main_fallback_response(
+                result.keyword,
+                "관련 공지를 찾지 못했습니다.",
+                reason_code="NO_CHUNKS",
+            )
+            response = _maybe_convert_main_fallback_to_data_preparing(fallback)
+            yield _sse_event({'type': 'done', **response.model_dump()})
             return
 
         links = select_source_links(result.chunks)
@@ -721,3 +752,15 @@ def _build_fallback_response(reason: str) -> OrchestratorFallbackResponse:
 
 def _build_document_review_input_required_response(confidence: float) -> DocumentReviewInputRequiredResponse:
     return DocumentReviewInputRequiredResponse(confidence=confidence)
+
+
+def _maybe_convert_main_fallback_to_data_preparing(main_response):
+    reason_code = getattr(main_response, "fallbackReasonCode", None)
+    if not getattr(main_response, "fallbackUsed", False):
+        return main_response
+    if reason_code not in _DATA_PREPARING_REASON_CODES:
+        return main_response
+    return DataPreparingResponse(
+        answer=_DATA_PREPARING_MESSAGE,
+        fallbackReason=_DATA_PREPARING_MESSAGE,
+    )

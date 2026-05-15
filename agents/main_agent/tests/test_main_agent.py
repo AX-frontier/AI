@@ -486,3 +486,88 @@ def test_main_agent_keeps_top_source_for_search_quality_baseline(
     assert response.fallbackUsed is False
     assert response.sources[0].title == title
     assert response.sources[0].score >= 0.9
+
+
+def test_main_agent_returns_fallback_for_topic_mismatch_query() -> None:
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_mismatch",
+            traceId="tr_mismatch",
+            conversationUid="conv_mismatch",
+            message="우산 잃어버렸는데 어디에 전화해야되",
+        ),
+        repository=MockChunkRepository(
+            [
+                MainChunkRecord(
+                    chunk_id="notice-umbrella-0001",
+                    document_id="notice-umbrella",
+                    text="초록우산 봉사단 모집 공지입니다.",
+                    score=0.848,
+                    metadata={
+                        "title": "초록우산 봉사단 모집 안내",
+                        "category": "한성공지",
+                        "url": "https://example.edu/umbrella",
+                    },
+                ),
+                MainChunkRecord(
+                    chunk_id="notice-adobe-0001",
+                    document_id="notice-adobe",
+                    text="Adobe 공동구매 안내입니다.",
+                    score=0.598,
+                    metadata={
+                        "title": "Adobe 공동구매 특별 프로모션",
+                        "category": "한성공지",
+                        "url": "https://example.edu/adobe",
+                    },
+                ),
+            ]
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=MockLLMClient("무관한 답변"),
+    )
+
+    assert response.fallbackUsed is True
+    assert "직접적으로 일치하는 공지 데이터를 찾지 못했습니다" in response.fallbackReason
+    assert response.fallbackReasonCode == "TOPIC_MISMATCH_NO_DATA"
+
+
+def test_main_agent_returns_fallback_for_lost_item_query_without_lost_item_evidence() -> None:
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_mismatch_lost_item",
+            traceId="tr_mismatch_lost_item",
+            conversationUid="conv_mismatch_lost_item",
+            message="우산 잃어버렸는데 어디에 전화해야되?",
+        ),
+        repository=MockChunkRepository(
+            [
+                MainChunkRecord(
+                    chunk_id="notice-umbrella-0001",
+                    document_id="notice-umbrella",
+                    text="초록우산 2026 대학생 봉사단 모집 공지입니다.",
+                    score=0.9,
+                    metadata={
+                        "title": "[ESG센터] 초록우산 봉사단 모집",
+                        "category": "한성공지",
+                        "url": "https://example.edu/green-umbrella",
+                    },
+                ),
+                MainChunkRecord(
+                    chunk_id="notice-facility-0001",
+                    document_id="notice-facility",
+                    text="시설관리직 채용 문의는 아래 전화로 연락 바랍니다.",
+                    score=0.82,
+                    metadata={
+                        "title": "시설관리직 채용공고",
+                        "category": "한성공지",
+                        "url": "https://example.edu/facility-hiring",
+                    },
+                ),
+            ]
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=MockLLMClient("무관한 답변"),
+    )
+
+    assert response.fallbackUsed is True
+    assert response.fallbackReasonCode == "TOPIC_MISMATCH_NO_DATA"

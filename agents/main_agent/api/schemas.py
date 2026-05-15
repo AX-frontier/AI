@@ -10,6 +10,13 @@ MainIntent = Literal[
     "MAIN_GENERAL",
 ]
 
+MainFallbackReasonCode = Literal[
+    "NO_CHUNKS",
+    "LOW_SIMILARITY",
+    "TOPIC_MISMATCH_NO_DATA",
+    "GENERIC",
+]
+
 
 class MainChatRequest(BaseModel):
     """Spring이 Main Agent로 학교 일반 질의를 라우팅할 때 보내는 요청 본문."""
@@ -42,5 +49,6 @@ class MainChatResponse(BaseModel):
     confidence: float
     fallbackUsed: bool
     fallbackReason: str | None = None
+    fallbackReasonCode: MainFallbackReasonCode | None = None
     searchKeyword: str | None = None
     resultCount: int = 0
