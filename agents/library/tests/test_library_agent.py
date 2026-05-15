@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from agents.library.aladin import AladinBookSignal, AladinClient, AladinPopularity, _CACHE
 from agents.library.agent import decide_library_llm_policy, run_library_agent
 from agents.library.api.schemas import LibraryChatRequest
 from agents.library.classifier import IntentClassification
 from agents.library.models import BookRecord, GuideChunkRecord, GuideDocRecord
+from agents.library.recommendation import build_recommendation_summary, rank_book_recommendations
 from agents.library.retrieval import GuideRetriever, GuideSearchResult
+from agents.main_agent.embedding import get_embedding_provider
 from agents.main_agent.llm.mock import MockLLMClient
 
 
@@ -61,6 +64,15 @@ class CountingLibraryRepository:
         ]
         return results[:limit]
 
+    def search_books_by_embedding(
+        self,
+        query_embedding: list[float],
+        limit: int = 5,
+        *,
+        min_score: float = 0.35,
+    ) -> list[BookRecord]:
+        return []
+
 
 @dataclass
 class MockLibraryRepository:
@@ -97,6 +109,15 @@ class MockLibraryRepository:
             if normalized in guide.title.lower() or normalized in guide.content.lower()
         ]
         return results[:limit]
+
+    def search_books_by_embedding(
+        self,
+        query_embedding: list[float],
+        limit: int = 5,
+        *,
+        min_score: float = 0.35,
+    ) -> list[BookRecord]:
+        return []
 
 
 def make_request(message: str) -> LibraryChatRequest:
@@ -729,6 +750,270 @@ def test_guide_reranking_prefers_section_match_over_table_heavy_chunk() -> None:
     assert "예약" in result.chunks[0].content
 
 
+def test_guide_reranking_prefers_staff_contact_table_for_director_contact_question() -> None:
+    class StaffContactRepository:
+        def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
+            return []
+
+        def search_guide_chunks_by_keyword(
+            self,
+            keyword: str,
+            *,
+            limit: int = 12,
+        ) -> list[GuideChunkRecord]:
+            return [
+                GuideChunkRecord(
+                    id=351,
+                    guide_doc_id=41,
+                    title="원문복사 신청",
+                    source_url="https://library.example.edu/copy",
+                    content=(
+                        "문서 제목: 원문복사 신청\n"
+                        "섹션: 이용자 인증\n"
+                        "기관회원 정보를 추가 기입한 뒤 lib@hansung.ac.kr로 메일 보내주시면 됩니다."
+                    ),
+                    chunk_index=0,
+                    score=0.66,
+                ),
+                GuideChunkRecord(
+                    id=352,
+                    guide_doc_id=42,
+                    title="조직안내",
+                    source_url="https://library.example.edu/staff",
+                    content=(
+                        "문서 제목: 조직안내\n"
+                        "섹션: 조직 안내\n\n"
+                        "| 직위 | 성명 | 업무 | 이메일 | 전화번호 |\n"
+                        "| --- | --- | --- | --- | --- |\n"
+                        "| 관장 | 박지영 | 학술정보관 업무 총괄 | zgpark@hansung.ac.kr | 02-760-4280 |"
+                    ),
+                    chunk_index=0,
+                    score=0.5,
+                ),
+            ]
+
+    result = GuideRetriever(StaffContactRepository()).retrieve("학술정보관 관장님 메일 번호는 뭐야?", limit=3)
+
+    assert result.chunks[0].id == 352
+    assert result.docs[0].title == "조직안내"
+    assert "zgpark@hansung.ac.kr" in result.chunks[0].content
+
+
+def test_staff_contact_guide_response_answers_director_email_and_phone(monkeypatch) -> None:
+    monkeypatch.setenv("MAIN_AGENT_EMBEDDING_PROVIDER", "deterministic")
+    monkeypatch.setenv("MAIN_AGENT_EMBEDDING_DIMENSIONS", "1536")
+    get_embedding_provider.cache_clear()
+
+    class StaffContactRepository:
+        def search_books(self, keyword: str, limit: int = 5, *, location_question: bool = False):
+            return []
+
+        def search_books_by_embedding(
+            self,
+            query_embedding: list[float],
+            limit: int = 5,
+            *,
+            min_score: float = 0.35,
+        ):
+            return []
+
+        def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
+            return []
+
+        def search_guide_chunks_by_keyword(
+            self,
+            keyword: str,
+            *,
+            limit: int = 12,
+        ) -> list[GuideChunkRecord]:
+            return [
+                GuideChunkRecord(
+                    id=361,
+                    guide_doc_id=42,
+                    title="조직안내",
+                    source_url="https://library.example.edu/staff",
+                    content=(
+                        "문서 제목: 조직안내\n"
+                        "섹션: 조직 안내\n\n"
+                        "| 직위 | 성명 | 업무 | 이메일 | 전화번호 |\n"
+                        "| --- | --- | --- | --- | --- |\n"
+                        "| 관장 | 박지영 | 학술정보관 업무 총괄 | zgpark@hansung.ac.kr | 02-760-4280 |"
+                    ),
+                    chunk_index=0,
+                    score=0.8,
+                )
+            ]
+
+        def search_guide_chunks_by_embedding(
+            self,
+            query_embedding: list[float],
+            *,
+            limit: int = 12,
+            min_score: float = 0.35,
+        ) -> list[GuideChunkRecord]:
+            return []
+
+    response = run_library_agent(
+        make_request("학술정보관 관장님 메일 번호는 뭐야?"),
+        StaffContactRepository(),
+    )
+
+    assert response.intent == "LIBRARY_GUIDE"
+    assert response.sources[0].title == "조직안내"
+    assert "박지영" in response.answer
+    assert "zgpark@hansung.ac.kr" in response.answer
+    assert "02-760-4280" in response.answer
+
+
+def test_staff_responsibility_guide_response_answers_matching_staff_member(monkeypatch) -> None:
+    monkeypatch.setenv("MAIN_AGENT_EMBEDDING_PROVIDER", "deterministic")
+    monkeypatch.setenv("MAIN_AGENT_EMBEDDING_DIMENSIONS", "1536")
+    get_embedding_provider.cache_clear()
+
+    class StaffResponsibilityRepository:
+        def search_books(self, keyword: str, limit: int = 5, *, location_question: bool = False):
+            return []
+
+        def search_books_by_embedding(
+            self,
+            query_embedding: list[float],
+            limit: int = 5,
+            *,
+            min_score: float = 0.35,
+        ):
+            return []
+
+        def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
+            return []
+
+        def search_guide_chunks_by_keyword(
+            self,
+            keyword: str,
+            *,
+            limit: int = 12,
+        ) -> list[GuideChunkRecord]:
+            return [
+                GuideChunkRecord(
+                    id=371,
+                    guide_doc_id=42,
+                    title="조직안내",
+                    source_url="https://library.example.edu/staff",
+                    content=(
+                        "문서 제목: 조직안내\n"
+                        "섹션: 조직 안내\n\n"
+                        "| 직위 | 성명 | 업무 | 이메일 | 전화번호 |\n"
+                        "| --- | --- | --- | --- | --- |\n"
+                        "| 관장 | 박지영 | 학술정보관 업무 총괄 | zgpark@hansung.ac.kr | 02-760-4280 |\n"
+                        "| 팀원 | 김태희 | 목록, 장서관리정책 수립, 자료수서, 장서폐기 및 제적 | thkim@hansung.kr | 02-760-5664 |"
+                    ),
+                    chunk_index=0,
+                    score=0.8,
+                )
+            ]
+
+        def search_guide_chunks_by_embedding(
+            self,
+            query_embedding: list[float],
+            *,
+            limit: int = 12,
+            min_score: float = 0.35,
+        ) -> list[GuideChunkRecord]:
+            return []
+
+    response = run_library_agent(
+        make_request("목록, 장서관리정책 수립담당자는 누구야?"),
+        StaffResponsibilityRepository(),
+    )
+
+    assert response.intent == "LIBRARY_GUIDE"
+    assert response.sources[0].title == "조직안내"
+    assert "김태희" in response.answer
+    assert "thkim@hansung.kr" in response.answer
+    assert "02-760-5664" in response.answer
+
+
+def test_service_contact_guide_response_prefers_work_contact_table(monkeypatch) -> None:
+    monkeypatch.setenv("MAIN_AGENT_EMBEDDING_PROVIDER", "deterministic")
+    monkeypatch.setenv("MAIN_AGENT_EMBEDDING_DIMENSIONS", "1536")
+    get_embedding_provider.cache_clear()
+
+    class ServiceContactRepository:
+        def search_books(self, keyword: str, limit: int = 5, *, location_question: bool = False):
+            return []
+
+        def search_books_by_embedding(
+            self,
+            query_embedding: list[float],
+            limit: int = 5,
+            *,
+            min_score: float = 0.35,
+        ):
+            return []
+
+        def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
+            return []
+
+        def search_guide_chunks_by_keyword(
+            self,
+            keyword: str,
+            *,
+            limit: int = 12,
+        ) -> list[GuideChunkRecord]:
+            return [
+                GuideChunkRecord(
+                    id=381,
+                    guide_doc_id=42,
+                    title="조직안내",
+                    source_url="https://library.example.edu/staff",
+                    content=(
+                        "문서 제목: 조직안내\n"
+                        "섹션: 조직 안내\n\n"
+                        "| 직위 | 성명 | 업무 | 이메일 | 전화번호 |\n"
+                        "| --- | --- | --- | --- | --- |\n"
+                        "| 부팀장 | 조용훈 | 교내·지역 아카이빙, 열람실 관리, 자료 대출·반납 | yong1221@hansung.ac.kr | 02-760-5671 |"
+                    ),
+                    chunk_index=0,
+                    score=0.85,
+                ),
+                GuideChunkRecord(
+                    id=382,
+                    guide_doc_id=42,
+                    title="조직안내",
+                    source_url="https://library.example.edu/staff",
+                    content=(
+                        "문서 제목: 조직안내\n"
+                        "섹션: 업무별 안내\n\n"
+                        "| 구분 | 내용 | | 위치 | 전화번호 |\n"
+                        "| --- | --- | --- | --- | --- |\n"
+                        "| 학술정보관 이용 | 도서 대출/반납/연장/분실 | | 2층 인포메이션데스크 | 760-4283, 5671 |"
+                    ),
+                    chunk_index=1,
+                    score=0.65,
+                ),
+            ]
+
+        def search_guide_chunks_by_embedding(
+            self,
+            query_embedding: list[float],
+            *,
+            limit: int = 12,
+            min_score: float = 0.35,
+        ) -> list[GuideChunkRecord]:
+            return []
+
+    response = run_library_agent(
+        make_request("도서 대출이나 반납 같은 거 문의하려면 어디에 전화해야돼?"),
+        ServiceContactRepository(),
+    )
+
+    assert response.intent == "LIBRARY_GUIDE"
+    assert response.sources[0].title == "조직안내"
+    assert response.summary["content"].startswith("문서 제목: 조직안내\n섹션: 업무별 안내")
+    assert "2층 인포메이션데스크" in response.answer
+    assert "760-4283, 5671" in response.answer
+    assert "조용훈" not in response.answer
+
+
 def test_guide_reranking_penalizes_stub_chunk_for_explanatory_result() -> None:
     class StubPenaltyRepository:
         def search_guide_docs(self, keyword: str, limit: int = 3) -> list[GuideDocRecord]:
@@ -782,9 +1067,381 @@ def test_no_search_results_returns_fallback() -> None:
     response = run_library_agent(make_request("없는책 도서 검색"), make_repository())
 
     assert response.fallbackUsed is True
-    assert response.fallbackReason == "검색 조건과 일치하는 도서를 찾지 못했습니다."
+    assert response.fallbackReason == "소장 도서에서는 검색 조건과 일치하는 도서를 찾지 못했습니다."
     assert response.resultCount == 0
     assert response.matchedBooks == []
+    assert response.summary["contentType"] == "fallback_options"
+
+
+def test_book_recommendation_returns_ranked_summary() -> None:
+    response = run_library_agent(make_request("파이썬 책 추천해줘"), make_repository())
+
+    assert response.intent == "BOOK_RECOMMENDATION"
+    assert response.fallbackUsed is False
+    assert response.matchedBooks[0].title == "파이썬 자료구조"
+    assert response.summary["contentType"] == "book_recommendation"
+    assert "internal_search" in response.summary["recommendationBasis"]
+    assert response.summary["rankReasons"][0]["bookId"] == 1
+
+
+def test_light_reading_recommendation_rewrites_literal_fun_keyword() -> None:
+    class RewritingRepository(MockLibraryRepository):
+        def search_books(self, keyword: str, limit: int = 5, *, location_question: bool = False):
+            if keyword == "재밌는":
+                return [
+                    BookRecord(
+                        id=99,
+                        bib_no="BIB-099",
+                        reg_no="REG-099",
+                        title="제목에 재밌는이 들어간 책",
+                    )
+                ]
+            if keyword == "교양":
+                return [
+                    BookRecord(
+                        id=100,
+                        bib_no="BIB-100",
+                        reg_no="REG-100",
+                        title="가볍게 읽는 교양 산책",
+                        author="김교양",
+                        publisher="좋은책",
+                        publish_year=2023,
+                        holding_call_no="001 ㄱ111ㄱ",
+                        stack_location="인문자연과학자료실",
+                        stack_shelf="1-A-1-a",
+                    )
+                ]
+            if keyword == "소설":
+                return [
+                    BookRecord(
+                        id=101,
+                        bib_no="BIB-101",
+                        reg_no="REG-101",
+                        title="주말에 읽는 짧은 소설",
+                        author="김소설",
+                        publisher="이야기",
+                        publish_year=2022,
+                        holding_call_no="813 ㄱ222ㅈ",
+                        stack_location="인문자연과학자료실",
+                        stack_shelf="2-A-1-a",
+                    )
+                ]
+            if keyword == "에세이":
+                return [
+                    BookRecord(
+                        id=102,
+                        bib_no="BIB-102",
+                        reg_no="REG-102",
+                        title="산책하듯 읽는 에세이",
+                        author="이에세",
+                        publisher="마음",
+                        publish_year=2021,
+                        holding_call_no="814 ㅇ333ㅅ",
+                        stack_location="인문자연과학자료실",
+                        stack_shelf="3-A-1-a",
+                    )
+                ]
+            return []
+
+    response = run_library_agent(
+        make_request("재밌는 책 추천해줘"),
+        RewritingRepository(books=[], guides=[]),
+    )
+
+    assert response.intent == "BOOK_RECOMMENDATION"
+    assert response.fallbackUsed is False
+    assert response.searchKeyword == "재밌는"
+    assert "재밌는" not in response.answer
+    assert "가볍게 읽을 만한 교양/소설/에세이" in response.answer
+    assert response.matchedBooks[0].title == "가볍게 읽는 교양 산책"
+    assert [book.title for book in response.matchedBooks[:3]] == [
+        "가볍게 읽는 교양 산책",
+        "주말에 읽는 짧은 소설",
+        "산책하듯 읽는 에세이",
+    ]
+    assert response.summary["queryInterpretation"] == {
+        "rawKeyword": "재밌는",
+        "displayKeyword": "가볍게 읽을 만한 교양/소설/에세이",
+        "searchQueries": ["교양", "소설", "에세이", "상식", "여행", "역사"],
+        "mode": "light_reading",
+    }
+
+
+def test_popular_recommendation_uses_aladin_bestseller_reference(monkeypatch) -> None:
+    bestseller_book = BookRecord(
+        id=150,
+        bib_no="BIB-150",
+        reg_no="REG-150",
+        title="알라딘 인기 소설",
+        author="김인기",
+        publisher="인기출판",
+        publish_year=2024,
+        holding_call_no="813 ㄱ150ㅇ",
+        stack_location="어문학자료실",
+        stack_shelf="1-A-1-a",
+    )
+
+    class BestsellerRepository(MockLibraryRepository):
+        def search_books(self, keyword: str, limit: int = 5, *, location_question: bool = False):
+            if keyword == "알라딘 인기 소설":
+                return [bestseller_book]
+            return []
+
+    class FakeAladinClient:
+        def bestsellers(self, *, max_results: int = 20):
+            return [
+                AladinBookSignal(
+                    title="알라딘 인기 소설",
+                    isbn=None,
+                    isbn13=None,
+                    popularity_score=1.5,
+                    source="bestseller",
+                )
+            ]
+
+    monkeypatch.setattr("agents.library.agent.AladinClient", FakeAladinClient)
+
+    response = run_library_agent(
+        make_request("베스트셀러 책 추천해줘"),
+        BestsellerRepository(books=[], guides=[]),
+    )
+
+    assert response.intent == "BOOK_RECOMMENDATION"
+    assert response.fallbackUsed is False
+    assert response.searchKeyword == "베스트셀러"
+    assert response.matchedBooks[0].title == "알라딘 인기 소설"
+    assert response.summary["queryInterpretation"]["mode"] == "popular"
+
+
+def test_generic_book_recommendation_returns_clarification() -> None:
+    response = run_library_agent(make_request("책 추천해줘"), make_repository())
+
+    assert response.intent == "BOOK_RECOMMENDATION"
+    assert response.fallbackUsed is False
+    assert response.summary["contentType"] == "clarification"
+    assert [option["label"] for option in response.summary["clarificationOptions"]] == [
+        "인기 도서",
+        "전공/분야별",
+        "가볍게 읽을 책",
+        "최근 출간/입문서",
+    ]
+
+
+def test_ambiguous_request_returns_book_or_guide_clarification() -> None:
+    response = run_library_agent(make_request("추천해줘"), make_repository())
+
+    assert response.fallbackUsed is False
+    assert response.summary["contentType"] == "clarification"
+    assert [option["label"] for option in response.summary["clarificationOptions"]] == [
+        "도서 추천/검색",
+        "학술정보관 이용 안내",
+    ]
+
+
+def test_book_fallback_expands_keyword_before_options() -> None:
+    response = run_library_agent(make_request("프로그래밍 책 추천해줘"), make_repository())
+
+    assert response.intent == "BOOK_RECOMMENDATION"
+    assert response.fallbackUsed is False
+    assert response.searchKeyword == "파이썬"
+    assert response.matchedBooks[0].title == "파이썬 자료구조"
+    assert response.summary["expandedFrom"] == "프로그래밍"
+
+
+def test_guide_fallback_uses_guide_options() -> None:
+    response = run_library_agent(make_request("도서관 사물함 이용 알려줘"), make_repository())
+
+    assert response.intent == "LIBRARY_GUIDE"
+    assert response.fallbackUsed is True
+    assert response.summary["contentType"] == "fallback_options"
+    assert [option["label"] for option in response.summary["clarificationOptions"]] == [
+        "운영시간",
+        "대출/반납",
+        "좌석/시설",
+        "전자자료",
+    ]
+
+
+def test_recommendation_ranking_survives_aladin_failure() -> None:
+    class FailingAladinClient:
+        def enrich(self, books):
+            raise RuntimeError("external api failed")
+
+    ranked = rank_book_recommendations("파이썬", make_repository().books, aladin_client=FailingAladinClient())
+
+    assert ranked[0].book.title == "파이썬 자료구조"
+    assert "internal_search" in ranked[0].basis
+
+
+def test_recommendation_ranking_uses_aladin_popularity_signal() -> None:
+    books = [
+        BookRecord(
+            id=11,
+            bib_no="BIB-011",
+            reg_no="REG-011",
+            title="데이터 분석 입문",
+            publish_year=2024,
+            holding_call_no="005 ㄷ111",
+            stack_location="제1자료실",
+            stack_shelf="A-01",
+        ),
+        BookRecord(
+            id=12,
+            bib_no="BIB-012",
+            reg_no="REG-012",
+            title="데이터 분석 실전",
+            publish_year=2018,
+            holding_call_no="005 ㄷ222",
+            stack_location="제1자료실",
+            stack_shelf="A-02",
+        ),
+    ]
+
+    class PopularityClient:
+        def enrich(self, books):
+            return {12: AladinPopularity(popularity_score=1.6, matched_by="isbn")}
+
+    ranked = rank_book_recommendations("데이터 분석", books, aladin_client=PopularityClient())
+
+    assert ranked[0].book.id == 12
+    assert "aladin_popularity" in ranked[0].basis
+
+
+def test_recommendation_ranking_dedupes_same_book_holdings() -> None:
+    books = [
+        BookRecord(
+            id=21,
+            bib_no="BIB-021",
+            reg_no="REG-021",
+            title="인공지능",
+            author="스튜어트 러셀",
+            publisher="제이펍",
+            publish_year=2016,
+            holding_call_no="004 ㅇ111",
+            stack_location="",
+            stack_shelf="",
+        ),
+        BookRecord(
+            id=22,
+            bib_no="BIB-022",
+            reg_no="REG-022",
+            title="인공지능",
+            author="스튜어트 러셀",
+            publisher="제이펍",
+            publish_year=2016,
+            holding_call_no="004 ㅇ111",
+            stack_location="Design&IT정보센터(6F)",
+            stack_shelf="90-A-1-a",
+        ),
+        BookRecord(
+            id=23,
+            bib_no="BIB-023",
+            reg_no="REG-023",
+            title="인공지능 윤리",
+            author="한국인공지능법학회",
+            publisher="박영사",
+            publish_year=2021,
+            holding_call_no="004 ㅎ111",
+            stack_location="사회과학자료실(4F)",
+            stack_shelf="1-A-1-a",
+        ),
+    ]
+
+    class EmptyPopularityClient:
+        def enrich(self, books):
+            return {}
+
+    ranked = rank_book_recommendations("인공지능", books, aladin_client=EmptyPopularityClient())
+    summary = {item["bookId"]: item for item in build_recommendation_summary(ranked)["rankReasons"]}
+
+    assert [item.book.id for item in ranked] == [23, 22]
+    assert ranked[1].holding_count == 2
+    assert ranked[1].book.stack_location == "Design&IT정보센터(6F)"
+    assert summary[22]["holdingCount"] == 2
+    assert summary[22]["dedupeKey"]
+
+
+def test_aladin_client_caches_popularity_lookup(monkeypatch) -> None:
+    _CACHE.clear()
+    calls = {"count": 0}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "item": [
+                    {
+                        "salesPoint": 5000,
+                        "customerReviewRank": 8,
+                        "bestRank": 100,
+                    }
+                ]
+            }
+
+    def fake_get(*args, **kwargs):
+        calls["count"] += 1
+        return FakeResponse()
+
+    monkeypatch.setattr("agents.library.aladin.requests.get", fake_get)
+    client = AladinClient(api_key="test-key", cache_ttl_seconds=60)
+    book = BookRecord(
+        id=30,
+        bib_no="BIB-030",
+        reg_no="REG-030",
+        title="파이썬",
+        isbn="1234567890",
+    )
+
+    first = client.enrich([book])
+    second = client.enrich([book])
+
+    assert calls["count"] == 1
+    assert first[30].popularity_score == second[30].popularity_score
+
+
+def test_book_recommendation_uses_semantic_candidates(monkeypatch) -> None:
+    monkeypatch.setenv("MAIN_AGENT_EMBEDDING_PROVIDER", "deterministic")
+    monkeypatch.setenv("MAIN_AGENT_EMBEDDING_DIMENSIONS", "1536")
+    get_embedding_provider.cache_clear()
+    semantic_book = BookRecord(
+        id=20,
+        bib_no="BIB-020",
+        reg_no="REG-020",
+        title="머신러닝 실무 프로젝트",
+        author="이AI",
+        publisher="한빛미디어",
+        publish_year=2024,
+        holding_call_no="005.76 ㅇ111ㅁ",
+        material_type="단행본",
+        location_symbol="LIB",
+        stack_location="제1자료실",
+        stack_shelf="A-22",
+    )
+
+    class SemanticOnlyRepository(MockLibraryRepository):
+        def search_books(self, keyword: str, limit: int = 5, *, location_question: bool = False):
+            return []
+
+        def search_books_by_embedding(
+            self,
+            query_embedding: list[float],
+            limit: int = 5,
+            *,
+            min_score: float = 0.35,
+        ):
+            return [semantic_book]
+
+    response = run_library_agent(
+        make_request("인공지능 책 추천해줘"),
+        SemanticOnlyRepository(books=[], guides=[]),
+    )
+
+    assert response.intent == "BOOK_RECOMMENDATION"
+    assert response.fallbackUsed is False
+    assert response.matchedBooks[0].title == "머신러닝 실무 프로젝트"
+    assert "semantic" in response.summary["recommendationBasis"]
 
 
 def make_clean_code_repository() -> MockLibraryRepository:

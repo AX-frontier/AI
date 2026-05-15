@@ -103,6 +103,8 @@ def _ensure_columns(engine) -> None:
         "ALTER TABLE library.books ADD COLUMN IF NOT EXISTS stack_location_normalized TEXT",
         "ALTER TABLE library.books ADD COLUMN IF NOT EXISTS stack_shelf_normalized TEXT",
         "ALTER TABLE library.books ADD COLUMN IF NOT EXISTS search_text_normalized TEXT",
+        "ALTER TABLE library.books ADD COLUMN IF NOT EXISTS embedding vector(1536)",
+        "ALTER TABLE library.books ADD COLUMN IF NOT EXISTS embedding_text_hash TEXT",
     ]
     with engine.begin() as connection:
         for statement in statements:
@@ -117,6 +119,7 @@ def _ensure_indexes(engine) -> None:
         "CREATE INDEX IF NOT EXISTS idx_books_holding_call_no_normalized_trgm ON library.books USING gin (holding_call_no_normalized gin_trgm_ops)",
         "CREATE INDEX IF NOT EXISTS idx_books_stack_shelf_normalized_trgm ON library.books USING gin (stack_shelf_normalized gin_trgm_ops)",
         "CREATE INDEX IF NOT EXISTS idx_books_search_text_normalized_trgm ON library.books USING gin (search_text_normalized gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_books_embedding ON library.books USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100) WHERE embedding IS NOT NULL",
     ]
     with engine.begin() as connection:
         for statement in statements:

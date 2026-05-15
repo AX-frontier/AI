@@ -18,6 +18,7 @@ class BookRecord:
     location_symbol: str | None = None
     stack_location: str | None = None
     stack_shelf: str | None = None
+    isbn: str | None = None
 
 
 @dataclass(frozen=True)

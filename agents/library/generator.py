@@ -15,6 +15,7 @@ def build_book_response(
     intent: LibraryIntent,
     result: BookSearchResult,
     confidence: float,
+    summary: dict | None = None,
 ) -> LibraryChatResponse:
     """도서 검색 결과를 Spring 호환 Library 응답으로 변환한다."""
     matched_books = [_book_to_response(book) for book in result.books]
@@ -35,7 +36,11 @@ def build_book_response(
         )
     elif intent == "BOOK_RECOMMENDATION":
         titles = ", ".join(book.title for book in matched_books[:3])
-        answer = f"'{result.keyword}'와 관련해 {result_count}건의 도서를 찾았습니다. 우선 {titles}을 확인해 보세요."
+        display_keyword = _recommendation_display_keyword(result.keyword, summary)
+        answer = (
+            f"'{display_keyword}'와 관련해 소장 도서 {result_count}건을 추천드릴게요. "
+            f"우선 {titles}을 확인해 보세요."
+        )
     else:
         titles = ", ".join(book.title for book in matched_books[:3])
         answer = f"'{result.keyword}' 검색 결과 {result_count}건을 찾았습니다. 주요 결과는 {titles}입니다."
@@ -47,10 +52,12 @@ def build_book_response(
         confidence=max(confidence, 0.8),
         fallbackUsed=False,
         fallbackReason=None,
-        searchKeyword=result.keyword,
+        searchKeyword=_response_search_keyword(result.keyword, summary)
+        if intent == "BOOK_RECOMMENDATION"
+        else result.keyword,
         resultCount=result_count,
         matchedBooks=matched_books,
-        summary=(
+        summary=summary or (
             {
                 "contentType": "book_location",
                 "locationCard": _build_location_card(first),
@@ -77,7 +84,7 @@ def build_guide_response(
     answer_title = primary_chunk.title if primary_chunk else primary.title
     answer_content = primary_chunk.content if primary_chunk else primary.content
     # GUIDE 답변은 항상 짧은 요약으로 고정하고, 상세/표는 structured 필드로 분리한다.
-    answer = _compose_guide_answer(answer_title, answer_content)
+    answer = _compose_guide_answer(answer_title, answer_content, context.keyword)
     structured_summary = _build_guide_summary(answer_title, answer_content)
     extracted_tables = _extract_markdown_tables(answer_content)
     if structured_summary is not None:
@@ -102,10 +109,182 @@ def build_guide_response(
     )
 
 
-def _compose_guide_answer(title: str, content: str) -> str:
+def _compose_guide_answer(title: str, content: str, keyword: str | None = None) -> str:
+    service_contact_answer = _compose_service_contact_answer(title, content, keyword)
+    if service_contact_answer:
+        return service_contact_answer
+    staff_contact_answer = _compose_staff_contact_answer(title, content, keyword)
+    if staff_contact_answer:
+        return staff_contact_answer
     plain = _strip_table_lines(_normalize_content(content))
     snippet = _first_meaningful_line(plain) or "관련 안내를 찾았습니다."
     return f"{title}: {snippet}"
+
+
+def _compose_service_contact_answer(title: str, content: str, keyword: str | None = None) -> str | None:
+    if "업무별 안내" not in content:
+        return None
+
+    rows = _parse_service_contact_rows(content)
+    if not rows:
+        return None
+
+    query_terms = _staff_query_terms(keyword or "")
+    best_row: dict[str, str] | None = None
+    best_score = 0
+    for row in rows:
+        searchable = " ".join(
+            str(row.get(key, "")) for key in ("category", "content", "location", "phone")
+        ).lower()
+        score = _service_contact_row_score(query_terms, searchable)
+        if score > best_score:
+            best_row = row
+            best_score = score
+    if best_row is not None:
+        content_text = best_row.get("content") or best_row.get("category") or "해당 업무"
+        location = best_row.get("location") or "위치 정보 없음"
+        phone = best_row.get("phone") or "전화번호 정보 없음"
+        return f"'{content_text}' 문의는 {location}로 연락하면 되고, 전화번호는 {phone}입니다."
+    return None
+
+
+def _service_contact_row_score(query_terms: list[str], searchable: str) -> int:
+    if not query_terms:
+        return 0
+    high_value_terms = {
+        "대출",
+        "반납",
+        "연장",
+        "분실",
+        "구입",
+        "구독",
+        "학술db",
+        "시설",
+        "기기",
+        "열람실",
+        "원문복사",
+        "상호대차",
+    }
+    low_value_terms = {"도서", "자료", "문의", "전화", "전화번호", "번호", "어디", "어디에"}
+    score = 0
+    for term in query_terms:
+        if term not in searchable:
+            continue
+        if term in high_value_terms:
+            score += 4
+        elif term in low_value_terms:
+            score += 1
+        else:
+            score += 2
+    return score
+
+
+def _parse_service_contact_rows(content: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    current_category = ""
+    current_location = ""
+    current_phone = ""
+
+    for line in _normalize_content(content).splitlines():
+        if "|" not in line or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if not cells or cells[0] == "구분":
+            continue
+
+        if len(cells) >= 5:
+            category = cells[0] or current_category
+            content_text = cells[1] or category
+            location = cells[3] or current_location
+            phone = cells[4] or current_phone
+        elif len(cells) == 3:
+            category = current_category
+            content_text = cells[0] or category
+            location = cells[1] or current_location
+            phone = cells[2] or current_phone
+        elif len(cells) == 2:
+            category = current_category
+            content_text = cells[0] or category
+            location = current_location
+            phone = cells[1] or current_phone
+        else:
+            category = current_category
+            content_text = cells[0] if cells else category
+            location = current_location
+            phone = current_phone
+
+        if category:
+            current_category = category
+        if location:
+            current_location = location
+        if phone:
+            current_phone = phone
+        if content_text:
+            rows.append(
+                {
+                    "category": current_category,
+                    "content": content_text,
+                    "location": location,
+                    "phone": phone,
+                }
+            )
+    return rows
+
+
+def _compose_staff_contact_answer(title: str, content: str, keyword: str | None = None) -> str | None:
+    if "조직안내" not in title and "문서 제목: 조직안내" not in content:
+        return None
+
+    rows = []
+    for line in _normalize_content(content).splitlines():
+        if "|" not in line or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 5 or cells[0] == "직위":
+            continue
+        rows.append(cells[:5])
+
+    if keyword:
+        query_terms = _staff_query_terms(keyword)
+        for position, name, role, email, phone in rows:
+            searchable = f"{position} {name} {role} {email} {phone}".lower()
+            if query_terms and any(term in searchable for term in query_terms):
+                if position == "관장":
+                    return f"학술정보관 관장은 {name}이며, 이메일은 {email}, 전화번호는 {phone}입니다. 담당 업무는 {role}입니다."
+                return f"'{role}' 담당자는 {name}이며, 이메일은 {email}, 전화번호는 {phone}입니다."
+
+    for position, name, role, email, phone in rows:
+        if position == "관장":
+            return f"학술정보관 관장은 {name}이며, 이메일은 {email}, 전화번호는 {phone}입니다. 담당 업무는 {role}입니다."
+    return None
+
+
+def _staff_query_terms(keyword: str) -> list[str]:
+    raw_terms = re.findall(r"[0-9A-Za-z가-힣]+", keyword.lower())
+    stop_terms = {
+        "학술정보관",
+        "담당",
+        "담당자",
+        "담당자는",
+        "누구",
+        "누구야",
+        "누구인가요",
+        "알려줘",
+        "메일",
+        "이메일",
+        "번호",
+        "전화",
+        "전화번호",
+        "뭐야",
+    }
+    terms: list[str] = []
+    for term in raw_terms:
+        trimmed = re.sub(r"(담당자는|담당자|담당|자는|은|는|이|가|을|를|야)$", "", term)
+        for candidate in (term, trimmed):
+            if len(candidate) >= 2 and candidate not in stop_terms:
+                terms.append(candidate)
+    seen: set[str] = set()
+    return [term for term in terms if not (term in seen or seen.add(term))]
 
 
 def _generate_guide_answer(context: GuideContext, llm_client: LLMClient) -> str:
@@ -118,10 +297,11 @@ def _generate_guide_answer(context: GuideContext, llm_client: LLMClient) -> str:
         answer = llm_client.generate(_build_guide_answer_prompt(context))
     except Exception as e:
         logging.getLogger(__name__).warning("LLM guide answer generation failed: %s", e)
-        return _compose_guide_answer(fallback_title, fallback_content)
+        return _compose_guide_answer(fallback_title, fallback_content, context.keyword)
     return answer.strip() if answer and answer.strip() else _compose_guide_answer(
         fallback_title,
         fallback_content,
+        context.keyword,
     )
 
 
@@ -205,7 +385,11 @@ def build_guide_response_with_answer(
     sources = _build_guide_sources(context)
     return LibraryChatResponse(
         intent=intent,
-        answer=answer.strip() if answer and answer.strip() else _compose_guide_answer(raw_title, raw_content),
+        answer=answer.strip() if answer and answer.strip() else _compose_guide_answer(
+            raw_title,
+            raw_content,
+            context.keyword,
+        ),
         sources=sources,
         confidence=max(confidence, 0.75),
         fallbackUsed=False,
@@ -235,6 +419,57 @@ def build_fallback_response(intent: LibraryIntent, keyword: str, reason: str) ->
     )
 
 
+def build_clarification_response(
+    intent: LibraryIntent,
+    keyword: str,
+    question: str,
+    options: list[dict[str, str]],
+) -> LibraryChatResponse:
+    """의도가 너무 넓거나 애매할 때 선택지를 담은 재질의 응답을 만든다."""
+    return LibraryChatResponse(
+        intent=intent,
+        answer=question,
+        sources=[],
+        confidence=0.55,
+        fallbackUsed=False,
+        fallbackReason=None,
+        searchKeyword=keyword,
+        resultCount=0,
+        matchedBooks=[],
+        summary={
+            "contentType": "clarification",
+            "clarificationOptions": options,
+        },
+        extractedTables=None,
+    )
+
+
+def build_fallback_options_response(
+    intent: LibraryIntent,
+    keyword: str,
+    reason: str,
+    options: list[dict[str, str]],
+) -> LibraryChatResponse:
+    """검색 실패 이유와 다음 액션 선택지를 함께 반환한다."""
+    option_text = " ".join(f"{index}. {option['label']}" for index, option in enumerate(options, start=1))
+    return LibraryChatResponse(
+        intent=intent,
+        answer=f"{reason} {option_text} 중에서 선택해 다시 질문해 주세요.",
+        sources=[],
+        confidence=0.4,
+        fallbackUsed=True,
+        fallbackReason=reason,
+        searchKeyword=keyword,
+        resultCount=0,
+        matchedBooks=[],
+        summary={
+            "contentType": "fallback_options",
+            "clarificationOptions": options,
+        },
+        extractedTables=None,
+    )
+
+
 def _book_to_response(book: BookRecord) -> MatchedBook:
     """DB의 snake_case 도서 필드를 Spring 응답용 camelCase 필드로 매핑한다."""
     return MatchedBook(
@@ -257,6 +492,26 @@ def _decode_text(value: str | None) -> str | None:
     if value is None:
         return None
     return html.unescape(value)
+
+
+def _recommendation_display_keyword(keyword: str, summary: dict | None) -> str:
+    if isinstance(summary, dict):
+        interpretation = summary.get("queryInterpretation")
+        if isinstance(interpretation, dict):
+            display = interpretation.get("displayKeyword")
+            if isinstance(display, str) and display.strip():
+                return display.strip()
+    return keyword
+
+
+def _response_search_keyword(keyword: str, summary: dict | None) -> str:
+    if isinstance(summary, dict):
+        interpretation = summary.get("queryInterpretation")
+        if isinstance(interpretation, dict):
+            raw_keyword = interpretation.get("rawKeyword")
+            if isinstance(raw_keyword, str) and raw_keyword.strip():
+                return raw_keyword.strip()
+    return keyword
 
 
 def _summarize_content(content: str, max_length: int = 280) -> str:
@@ -311,11 +566,10 @@ def _first_meaningful_line(content: str) -> str | None:
 
 
 def _build_guide_summary(title: str, content: str) -> dict[str, object]:
-    normalized = _normalize_content(content)
     return {
         "contentType": "library_guide",
         "title": title,
-        "content": normalized,
+        "content": content,
     }
 
 
