@@ -3,6 +3,7 @@
 구현 범위는 날짜/시간/문장부호/항목 번호/붙임/끝표시 같은 텍스트 규칙과,
 수입 정산·소요예산 표의 필수 항목 및 금액 일치 여부 확인으로 제한한다.
 표는 자동 수정하지 않고 원본 전자결재/HWP 표에 사람이 반영할 코멘트만 반환한다.
+매뉴얼 항목별 처리 방식은 MANUAL_COVERAGE.md에 정리한다.
 """
 
 from __future__ import annotations
@@ -26,6 +27,46 @@ SMALL_AMOUNT_DIFF_WON = 1000
 ITEM_MARKER_PATTERN = re.compile(
     r"^(?P<indent>[ \t\u00a0\u3000]*)(?P<marker>\d+\.|[가-힣]\.|\d+\)|[가-힣]\)|\(\d+\)|\([가-힣]\)|[①-⑳]|[㉮-㉻])(?P<spaces>[^\S\r\n]*)(?P<content>\S.*)$"
 )
+DATA_TABLE_KEYWORDS = (
+    "구분",
+    "건수",
+    "금액",
+    "금액원",
+    "비고",
+    "합계",
+    "총계",
+    "소계",
+    "회계연도",
+    "회계구분",
+    "예산구분",
+    "세목",
+    "세목코드",
+    "소요예산",
+    "산출내역",
+)
+COMMON_ACRONYMS = {
+    "AI",
+    "API",
+    "DB",
+    "DX",
+    "FAQ",
+    "HTML",
+    "HWP",
+    "HWPX",
+    "IT",
+    "KAIST",
+    "PDF",
+    "RAG",
+    "S3",
+    "SW",
+    "UI",
+    "URL",
+    "UX",
+}
+NATIVE_NUMBER_WITH_UNIT_PATTERN = re.compile(
+    r"(?<![가-힣A-Za-z0-9])(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s+(?:명|건|부|개|회|차)"
+)
+LONG_SENTENCE_CHECK_LENGTH = 160
 ITEM_STYLE_ORDER = (
     "decimal_dot",
     "korean_dot",
@@ -79,13 +120,81 @@ def apply_safe_suggestions_to_html(body_html: str | None, findings: list[RuleFin
         if finding.rule_code == "ITEM_MARKER_STYLE":
             revised = _apply_item_marker_style_to_html(revised, finding)
             continue
-        revised = revised.replace(finding.original_text, finding.suggested_text, 1)
+        revised = _apply_text_replacement_outside_tables(
+            revised,
+            finding.original_text,
+            finding.suggested_text,
+        )
     return revised
+
+
+def _is_inside_protected_table(text_node) -> bool:
+    """실제 데이터 표 안의 텍스트만 자동 수정에서 제외한다.
+
+    HWP/전자결재 HTML은 본문 전체를 1칸짜리 외곽 table로 감싸기도 하므로,
+    모든 table 조상을 막으면 본문 수정이 통째로 사라질 수 있다. 직접 행/셀
+    구조가 2x2 이상이거나, 헤더/병합 셀이 있는 표만 사용자가 원본에서 직접
+    반영해야 하는 데이터 표로 본다.
+    """
+    return any(_looks_like_data_table(parent) for parent in text_node.parents if getattr(parent, "name", None) == "table")
+
+
+def _looks_like_data_table(table) -> bool:
+    rows = []
+    for row in table.find_all("tr"):
+        if row.find_parent("table") is not table:
+            continue
+        cells = [cell for cell in row.find_all(["td", "th"]) if cell.find_parent("table") is table]
+        if cells:
+            rows.append(cells)
+    if not rows:
+        return False
+    max_columns = max(len(cells) for cells in rows)
+    flattened = _normalize_label_text(" ".join(_direct_cell_text(cell, table) for cells in rows for cell in cells))
+    keyword_hits = sum(1 for keyword in DATA_TABLE_KEYWORDS if keyword in flattened)
+    numeric_cells = sum(
+        1
+        for cells in rows
+        for cell in cells
+        if re.search(r"\d[\d,]*(?:원|명|건|부|개|회|차)?", _direct_cell_text(cell, table))
+    )
+    uniform_rows = len({len(cells) for cells in rows}) == 1
+
+    if any(cell.name == "th" for cells in rows for cell in cells) and max_columns >= 2:
+        return True
+    if keyword_hits >= 2:
+        return True
+    if numeric_cells >= 2 and max_columns >= 2:
+        return True
+    return len(rows) >= 3 and max_columns >= 2 and uniform_rows and numeric_cells >= 1
+
+
+def _direct_cell_text(cell, table) -> str:
+    return " ".join(
+        str(text).strip()
+        for text in cell.find_all(string=True)
+        if text.strip() and text.find_parent("table") is table
+    )
+
+
+def _apply_text_replacement_outside_tables(body_html: str, original_text: str, suggested_text: str) -> str:
+    soup = BeautifulSoup(body_html, "html.parser")
+    for text_node in soup.find_all(string=True):
+        if _is_inside_protected_table(text_node):
+            continue
+        original = str(text_node)
+        revised = original.replace(original_text, suggested_text, 1)
+        if revised != original:
+            text_node.replace_with(revised)
+            return str(soup)
+    return body_html
 
 
 def _apply_attachment_label_to_html(body_html: str) -> str:
     soup = BeautifulSoup(body_html, "html.parser")
     for text_node in soup.find_all(string=True):
+        if _is_inside_protected_table(text_node):
+            continue
         original = str(text_node)
         revised = re.sub(
             r"^([ \t\u00a0\u3000]*)첨부(?=[ \t\u00a0\u3000]*\d+\.)",
@@ -102,8 +211,13 @@ def _apply_attachment_label_to_html(body_html: str) -> str:
 def _apply_item_marker_style_to_html(body_html: str, finding: RuleFinding) -> str:
     if finding.suggested_text is None:
         return body_html
-    if finding.original_text in body_html:
-        return body_html.replace(finding.original_text, finding.suggested_text, 1)
+    direct_revised = _apply_text_replacement_outside_tables(
+        body_html,
+        finding.original_text,
+        finding.suggested_text,
+    )
+    if direct_revised != body_html:
+        return direct_revised
 
     original_match = ITEM_MARKER_PATTERN.match(finding.original_text)
     suggested_match = ITEM_MARKER_PATTERN.match(finding.suggested_text)
@@ -115,6 +229,8 @@ def _apply_item_marker_style_to_html(body_html: str, finding: RuleFinding) -> st
     soup = BeautifulSoup(body_html, "html.parser")
     marker_pattern = re.compile(rf"^([ \t\u00a0\u3000]*){re.escape(original_marker)}(?=[^\S\r\n]*\S)")
     for text_node in soup.find_all(string=True):
+        if _is_inside_protected_table(text_node):
+            continue
         original = str(text_node)
         revised = marker_pattern.sub(lambda match: f"{match.group(1)}{suggested_marker}", original, count=1)
         if revised != original:
@@ -143,6 +259,7 @@ def review_rules(
         findings.extend(_review_line(line))
         checks.extend(_review_amounts(line))
 
+    checks.extend(_review_basic_principles(lines))
     findings.extend(_review_document_level(lines))
     findings.extend(_review_single_item_sections(lines))
     findings.extend(_review_item_marker_styles(lines))
@@ -773,6 +890,62 @@ def _review_amounts(line: DocumentLine) -> list[CheckRequiredItem]:
     return checks
 
 
+def _review_basic_principles(lines: list[DocumentLine]) -> list[CheckRequiredItem]:
+    """문서 작성 일반 원칙은 확정 교정보다 첫 의심 지점만 확인 항목으로 노출한다."""
+    checks: list[CheckRequiredItem] = []
+    reported_long_sentence = False
+    reported_abbreviation = False
+    reported_korean_number = False
+    for line in lines:
+        stripped = line.text.strip()
+        if not stripped:
+            continue
+        if not reported_long_sentence and len(stripped) >= LONG_SENTENCE_CHECK_LENGTH:
+            checks.append(
+                CheckRequiredItem(
+                    category="문서 목적과 표현",
+                    message="문장은 간결하고 명확하게 작성하는 것이 원칙입니다. 긴 문장은 문맥을 유지하면서 분리하거나 쉬운 표현으로 다듬을 수 있는지 확인해 주세요.",
+                    original_text=stripped[:120],
+                    line_start=line.number,
+                )
+            )
+            reported_long_sentence = True
+        if not reported_abbreviation and _has_possible_unexplained_foreign_term(stripped):
+            checks.append(
+                CheckRequiredItem(
+                    category="문서 목적과 표현",
+                    message="일반화되지 않은 약어, 외국어, 전문용어는 사용을 피하거나 필요한 경우 설명을 붙였는지 확인해야 합니다.",
+                    original_text=stripped,
+                    line_start=line.number,
+                )
+            )
+            reported_abbreviation = True
+        if not reported_korean_number:
+            normalized = re.sub(r"\(금[가-힣]+원?\)", "", stripped)
+            if NATIVE_NUMBER_WITH_UNIT_PATTERN.search(normalized):
+                checks.append(
+                    CheckRequiredItem(
+                        category="숫자 표기",
+                        message="문서에 쓰는 숫자는 특별한 사유가 없으면 아라비아 숫자로 쓰는 것이 원칙입니다.",
+                        original_text=stripped,
+                        line_start=line.number,
+                    )
+                )
+                reported_korean_number = True
+    return checks
+
+
+def _has_possible_unexplained_foreign_term(text: str) -> bool:
+    upper_tokens = [
+        token
+        for token in re.findall(r"\b[A-Z][A-Z0-9]{1,}\b", text)
+        if token not in COMMON_ACRONYMS and f"({token})" not in text
+    ]
+    if len(upper_tokens) >= 2:
+        return True
+    return bool(re.search(r"\b[A-Za-z]{4,}\b", text))
+
+
 def _review_document_level(lines: list[DocumentLine]) -> list[RuleFinding]:
     text = "\n".join(line.text for line in lines).strip()
     if not text or "끝." in text:
@@ -1236,6 +1409,35 @@ def _review_attachment_list(lines: list[DocumentLine]) -> list[CheckRequiredItem
                         line_start=line.number,
                     )
                 )
+    for line in attachment_lines:
+        if not re.search(r"\d+부\.", line.text):
+            checks.append(
+                CheckRequiredItem(
+                    category="붙임 표시",
+                    message="붙임 파일명 뒤에는 부수를 적고 마침표로 마무리했는지 확인해야 합니다.",
+                    original_text=line.text.strip(),
+                    line_start=line.number,
+                )
+            )
+    if attachment_lines and not any("끝." in line.text for line in attachment_scope):
+        last = attachment_lines[-1]
+        checks.append(
+            CheckRequiredItem(
+                category="끝표시",
+                message="붙임이 있는 문서는 마지막 붙임 항목 뒤에 끝표시를 했는지 확인해야 합니다.",
+                original_text=last.text.strip(),
+                line_start=last.number,
+            )
+        )
+    if attachment_lines:
+        checks.append(
+            CheckRequiredItem(
+                category="붙임 표시",
+                message="붙임파일명과 실제 첨부파일명이 서로 일치하는지 확인해야 합니다.",
+                original_text=attachment_lines[0].text.strip(),
+                line_start=attachment_lines[0].number,
+            )
+        )
     return checks
 
 

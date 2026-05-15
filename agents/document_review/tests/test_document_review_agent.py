@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from agents.document_review.agent import run_document_review_agent
 from agents.document_review.api.schemas import DocumentReviewRequest, ReviewDocument, TableCheckResponse
-from agents.document_review.rules import review_rules
+from agents.document_review.models import RuleFinding
+from agents.document_review.rules import apply_safe_suggestions_to_html, review_rules
 
 
 def test_document_review_agent_suggests_prompt_rule_revisions() -> None:
@@ -200,6 +201,128 @@ def test_document_review_agent_applies_attachment_label_to_html_content() -> Non
     assert "첨부" not in response.revisedDocument.htmlContent
 
 
+def test_document_review_html_auto_fix_does_not_modify_table_cells() -> None:
+    revised_html = apply_safe_suggestions_to_html(
+        (
+            "<table><tr><td>첨부&nbsp;&nbsp;1. 표 안 문구 1부.</td><td>비고</td></tr>"
+            "<tr><td>금액</td><td>1,000</td></tr></table>"
+            "<p>첨부&nbsp;&nbsp;2. 본문 문구 1부.</p>"
+        ),
+        [
+            RuleFinding(
+                rule_code="ATTACHMENT_LABEL",
+                category="붙임 표시",
+                severity="LOW",
+                status="REVISION_REQUIRED",
+                line_start=1,
+                line_end=1,
+                original_text="첨부  1.",
+                suggested_text="붙임  1.",
+                reason="첨부파일 목록 표기는 붙임으로 씁니다.",
+            )
+        ],
+    )
+
+    assert revised_html is not None
+    assert "<td>첨부" in revised_html
+    assert "<p>붙임" in revised_html
+
+
+def test_document_review_html_auto_fix_allows_outer_layout_table_text() -> None:
+    revised_html = apply_safe_suggestions_to_html(
+        (
+            "<table><tr><td>"
+            "<p>첨부&nbsp;&nbsp;1. 본문 문구 1부.</p>"
+            "</td></tr></table>"
+        ),
+        [
+            RuleFinding(
+                rule_code="ATTACHMENT_LABEL",
+                category="붙임 표시",
+                severity="LOW",
+                status="REVISION_REQUIRED",
+                line_start=1,
+                line_end=1,
+                original_text="첨부  1.",
+                suggested_text="붙임  1.",
+                reason="첨부파일 목록 표기는 붙임으로 씁니다.",
+            )
+        ],
+    )
+
+    assert revised_html is not None
+    assert "붙임" in revised_html
+    assert "첨부" not in revised_html
+
+
+def test_document_review_html_auto_fix_allows_letterhead_layout_table_text() -> None:
+    revised_html = apply_safe_suggestions_to_html(
+        (
+            "<table>"
+            "<tr><td>수신</td><td>학술정보팀</td></tr>"
+            "<tr><td>제목</td><td>첨부&nbsp;&nbsp;1. 본문 문구 1부.</td></tr>"
+            "</table>"
+        ),
+        [
+            RuleFinding(
+                rule_code="ATTACHMENT_LABEL",
+                category="붙임 표시",
+                severity="LOW",
+                status="REVISION_REQUIRED",
+                line_start=1,
+                line_end=1,
+                original_text="첨부  1.",
+                suggested_text="붙임  1.",
+                reason="첨부파일 목록 표기는 붙임으로 씁니다.",
+            )
+        ],
+    )
+
+    assert revised_html is not None
+    assert "붙임" in revised_html
+    assert "첨부" not in revised_html
+
+
+def test_document_review_html_auto_fix_skips_nested_data_table_text() -> None:
+    revised_html = apply_safe_suggestions_to_html(
+        (
+            "<table><tr><td>"
+            "<p>첨부&nbsp;&nbsp;1. 본문 문구 1부.</p>"
+            "<table><tr><td>첨부&nbsp;&nbsp;2. 표 안 문구 1부.</td><td>비고</td></tr>"
+            "<tr><td>금액</td><td>1,000</td></tr></table>"
+            "</td></tr></table>"
+        ),
+        [
+            RuleFinding(
+                rule_code="ATTACHMENT_LABEL",
+                category="붙임 표시",
+                severity="LOW",
+                status="REVISION_REQUIRED",
+                line_start=1,
+                line_end=1,
+                original_text="첨부  1.",
+                suggested_text="붙임  1.",
+                reason="첨부파일 목록 표기는 붙임으로 씁니다.",
+            ),
+            RuleFinding(
+                rule_code="ATTACHMENT_LABEL",
+                category="붙임 표시",
+                severity="LOW",
+                status="REVISION_REQUIRED",
+                line_start=2,
+                line_end=2,
+                original_text="첨부  2.",
+                suggested_text="붙임  2.",
+                reason="첨부파일 목록 표기는 붙임으로 씁니다.",
+            ),
+        ],
+    )
+
+    assert revised_html is not None
+    assert "붙임" in revised_html
+    assert "<td>첨부" in revised_html
+
+
 def test_document_review_agent_applies_item_marker_style_to_revised_content() -> None:
     request = DocumentReviewRequest(
         queryUid="00000000-0000-0000-0000-000000000022",
@@ -233,6 +356,92 @@ def test_document_review_agent_applies_item_marker_style_to_revised_content() ->
     assert response.revisedDocument.htmlContent is not None
     assert "1. 학술정보팀 수입" in response.revisedDocument.htmlContent
     assert "다. 정산 금액" in response.revisedDocument.htmlContent
+
+
+def test_document_review_agent_checks_manual_basic_principles() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000025",
+        traceId="00000000-0000-0000-0000-000000000026",
+        conversationUid="00000000-0000-0000-0000-000000000027",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "SW TFT 결과를 다음과 같이 보고합니다.\n"
+                "참석대상은 열 명입니다.\n"
+                "본 문장은 문서의 내용을 둘 이상의 항목으로 구분할 필요가 있음에도 불구하고 매우 긴 문장으로 작성되어 이용자가 핵심 내용을 빠르게 파악하기 어렵고 여러 의미가 한 문장에 함께 포함되어 있어 검토가 필요하며, 문서 작성자가 핵심 목적과 처리 사항을 한눈에 확인하기 어렵게 만들 수 있으므로 표현을 다듬을 여지가 있습니다.\n"
+                "  끝."
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    categories = {item.category for item in response.checkRequiredItems}
+    assert "문서 목적과 표현" in categories
+    assert "숫자 표기" in categories
+
+
+def test_document_review_agent_does_not_flag_common_korean_words_as_numbers() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000031",
+        traceId="00000000-0000-0000-0000-000000000032",
+        conversationUid="00000000-0000-0000-0000-000000000033",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "일부 부서에서 자료를 제출했습니다.\n"
+                "이부서 명칭은 예시 문장입니다.\n"
+                "참석대상은 10명입니다.\n"
+                "  끝."
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert not any(item.category == "숫자 표기" for item in response.checkRequiredItems)
+
+
+def test_document_review_agent_flags_native_korean_number_with_unit() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000034",
+        traceId="00000000-0000-0000-0000-000000000035",
+        conversationUid="00000000-0000-0000-0000-000000000036",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "참석 대상은 두 건입니다.\n"
+                "  끝."
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert any(item.category == "숫자 표기" for item in response.checkRequiredItems)
+
+
+def test_document_review_agent_checks_attachment_list_completion() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000028",
+        traceId="00000000-0000-0000-0000-000000000029",
+        conversationUid="00000000-0000-0000-0000-000000000030",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "붙임  1. 계획서\n"
+                "붙임  2. 증빙자료 1부."
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    messages = [item.message for item in response.checkRequiredItems]
+    assert any("부수를 적고 마침표" in message for message in messages)
+    assert any("두 번째 붙임부터" in message for message in messages)
+    assert any("마지막 붙임 항목 뒤에 끝표시" in message for message in messages)
+    assert any("실제 첨부파일명" in message for message in messages)
 
 
 def test_document_review_agent_does_not_infer_budget_table_from_keyword_only() -> None:
