@@ -122,7 +122,7 @@ def test_routes_to_main_when_only_main_vector_score_is_valid() -> None:
     assert decision.intent == "MAIN"
 
 
-def test_routes_to_fallback_when_no_evidence_is_valid() -> None:
+def test_routes_to_main_when_no_specialized_evidence_is_valid() -> None:
     decision = EvidenceBasedRouter().route(
         RoutingEvidence(
             main=AgentEvidence(score=0.2, reason="weak main"),
@@ -131,8 +131,8 @@ def test_routes_to_fallback_when_no_evidence_is_valid() -> None:
         )
     )
 
-    assert decision.target_agent == "FALLBACK"
-    assert decision.intent == "FALLBACK"
+    assert decision.target_agent == "MAIN"
+    assert decision.intent == "MAIN"
 
 
 def test_main_evidence_uses_main_retriever_reranked_top_hits() -> None:
@@ -208,6 +208,18 @@ def test_library_evidence_uses_intent_aware_keyword_cleanup() -> None:
     assert repository.book_keywords[0] == "책"
     assert evidence.score >= 0.7
     assert "book search hits: 1" in evidence.reason
+
+
+def test_library_evidence_is_disabled_for_non_book_intent() -> None:
+    repository = RecordingLibraryRepository()
+
+    evidence = RoutingEvidenceCollector(
+        library_repository=repository,
+        embedding_provider=FixedEmbeddingProvider(),
+    )._collect_library_evidence("도서관 몇 시까지 해?")
+
+    assert evidence.score == 0.0
+    assert "library routing limited to explicit book-search requests" in evidence.reason
 
 
 def test_document_review_evidence_comes_from_document_review_classifier() -> None:

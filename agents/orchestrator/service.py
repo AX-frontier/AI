@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Iterator
@@ -30,6 +31,7 @@ from agents.main_agent.repository import get_main_chunk_repository
 from agents.orchestrator.routing.evidence import RoutingEvidenceCollector
 from agents.orchestrator.routing.router import EvidenceBasedRouter
 
+logger = logging.getLogger(__name__)
 _ORCH_FOLLOWUP_MEMORY: dict[str, dict[str, str]] = {}
 _ORCH_FOLLOWUP_TTL = timedelta(minutes=15)
 _FOLLOWUP_STICKY_MARGIN = 0.10
@@ -65,6 +67,7 @@ def resolve_target_agent(
     evidence_collector: RoutingEvidenceCollector | None = None,
     router: EvidenceBasedRouter | None = None,
 ) -> ResolvedRoute:
+    started_at = datetime.now(UTC)
     collector = evidence_collector or RoutingEvidenceCollector()
     route_router = router or EvidenceBasedRouter()
 
@@ -102,10 +105,28 @@ def resolve_target_agent(
                 "confidence": max(0.9, fresh_response.confidence),
             }
         )
+        logger.info(
+            "orchestrator.route resolved conversation_uid=%s target_agent=%s mode=%s reason_code=%s confidence=%.3f elapsed_ms=%d",
+            conversation_uid,
+            overridden.targetAgent,
+            "FRESH",
+            "USER_OVERRIDE",
+            overridden.confidence,
+            int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+        )
         return ResolvedRoute(overridden, "FRESH", "USER_OVERRIDE")
 
     memory = _get_valid_followup_memory(conversation_uid)
     if not _looks_followup(message) or memory is None:
+        logger.info(
+            "orchestrator.route resolved conversation_uid=%s target_agent=%s mode=%s reason_code=%s confidence=%.3f elapsed_ms=%d",
+            conversation_uid,
+            fresh_response.targetAgent,
+            "FRESH",
+            "FRESH_DEFAULT",
+            fresh_response.confidence,
+            int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+        )
         return ResolvedRoute(fresh_response, "FRESH", "FRESH_DEFAULT")
 
     previous_target = memory.get("targetAgent")
@@ -122,6 +143,15 @@ def resolve_target_agent(
                     "routingReasonCode": "FOLLOWUP_REUSE",
                 }
             )
+            logger.info(
+                "orchestrator.route resolved conversation_uid=%s target_agent=%s mode=%s reason_code=%s confidence=%.3f elapsed_ms=%d",
+                conversation_uid,
+                sticky.targetAgent,
+                "FOLLOWUP_STICKY",
+                "FOLLOWUP_REUSE",
+                sticky.confidence,
+                int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            )
             return ResolvedRoute(sticky, "FOLLOWUP_STICKY", "FOLLOWUP_REUSE")
         switched = fresh_response.model_copy(
             update={
@@ -129,8 +159,26 @@ def resolve_target_agent(
                 "routingReasonCode": "EVIDENCE_SWITCH",
             }
         )
+        logger.info(
+            "orchestrator.route resolved conversation_uid=%s target_agent=%s mode=%s reason_code=%s confidence=%.3f elapsed_ms=%d",
+            conversation_uid,
+            switched.targetAgent,
+            "FRESH",
+            "EVIDENCE_SWITCH",
+            switched.confidence,
+            int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+        )
         return ResolvedRoute(switched, "FRESH", "EVIDENCE_SWITCH")
 
+    logger.info(
+        "orchestrator.route resolved conversation_uid=%s target_agent=%s mode=%s reason_code=%s confidence=%.3f elapsed_ms=%d",
+        conversation_uid,
+        fresh_response.targetAgent,
+        "FRESH",
+        "FRESH_DEFAULT",
+        fresh_response.confidence,
+        int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+    )
     return ResolvedRoute(fresh_response, "FRESH", "FRESH_DEFAULT")
 
 
@@ -219,85 +267,140 @@ def execute_routed_query(
     library_repository: LibraryRepository | None = None,
 ) -> OrchestratorChatResponse:
     """질의를 라우팅한 뒤 선택된 Agent를 내부 함수 호출로 바로 실행한다."""
+    started_at = datetime.now(UTC)
+    logger.info(
+        "orchestrator.chat start query_uid=%s trace_id=%s conversation_uid=%s message=%s",
+        request.queryUid,
+        request.traceId,
+        request.conversationUid,
+        request.message.strip().replace("\n", " ")[:200],
+    )
     resolved_message = _resolve_orchestrator_followup_message(
         str(request.conversationUid),
         request.message,
     )
-    resolved_route = resolve_target_agent(
-        str(request.conversationUid),
-        resolved_message,
-        evidence_collector=evidence_collector,
-        router=router,
-    )
-    route_result = _build_route_response(request, resolved_route)
-
-    if route_result.targetAgent == "MAIN":
-        response = run_main_agent(
-            MainChatRequest(
-                queryUid=request.queryUid,
-                traceId=request.traceId,
-                conversationUid=request.conversationUid,
-                message=resolved_message,
-            ),
-            repository=main_repository,
-            embedding_provider=main_embedding_provider,
-            llm_client=main_llm_client,
-        )
-        _remember_orchestrator_context(
+    try:
+        resolved_route = resolve_target_agent(
             str(request.conversationUid),
+            resolved_message,
+            evidence_collector=evidence_collector,
+            router=router,
+        )
+        route_result = _build_route_response(request, resolved_route)
+        logger.info(
+            "orchestrator.chat routed query_uid=%s target_agent=%s intent=%s mode=%s reason_code=%s confidence=%.3f",
+            request.queryUid,
             route_result.targetAgent,
-            _extract_memory_topic(resolved_message),
+            route_result.intent,
+            route_result.routingMode,
+            route_result.routingReasonCode,
+            route_result.confidence,
         )
-        return response
 
-    if route_result.targetAgent == "LIBRARY":
-        response = run_library_agent(
-            LibraryChatRequest.model_construct(
-                queryUid=request.queryUid,
-                traceId=request.traceId,
-                conversationUid=request.conversationUid,
-                message=resolved_message,
-            ),
-            repository=library_repository,
-        )
-        topic = resolved_message
-        if getattr(response, "summary", None) and isinstance(response.summary, dict):
-            title = response.summary.get("title")
-            if isinstance(title, str) and title.strip():
-                topic = title.strip()
-        _remember_orchestrator_context(
-            str(request.conversationUid),
-            route_result.targetAgent,
-            _extract_memory_topic(topic),
-        )
-        return response
-
-    if route_result.targetAgent == "DOCUMENT_REVIEW":
-        if request.document is None or not request.document.bodyText.strip():
-            response = _build_document_review_input_required_response(route_result.confidence)
+        if route_result.targetAgent == "MAIN":
+            response = run_main_agent(
+                MainChatRequest(
+                    queryUid=request.queryUid,
+                    traceId=request.traceId,
+                    conversationUid=request.conversationUid,
+                    message=resolved_message,
+                ),
+                repository=main_repository,
+                embedding_provider=main_embedding_provider,
+                llm_client=main_llm_client,
+            )
             _remember_orchestrator_context(
                 str(request.conversationUid),
                 route_result.targetAgent,
                 _extract_memory_topic(resolved_message),
             )
-            return response
-        response = run_document_review_agent(
-            DocumentReviewRequest(
-                queryUid=request.queryUid,
-                traceId=request.traceId,
-                conversationUid=request.conversationUid,
-                message=resolved_message,
-                document=request.document,
+            logger.info(
+                "orchestrator.chat done query_uid=%s target_agent=%s elapsed_ms=%d",
+                request.queryUid,
+                route_result.targetAgent,
+                int((datetime.now(UTC) - started_at).total_seconds() * 1000),
             )
-        )
-        _remember_orchestrator_context(
-            str(request.conversationUid),
-            route_result.targetAgent,
-            _extract_memory_topic(resolved_message),
-        )
-        return response
+            return response
 
-    return _build_fallback_response("질문을 이해하지 못했습니다. 관련 주제로 다시 입력해 주세요.")
+        if route_result.targetAgent == "LIBRARY":
+            response = run_library_agent(
+                LibraryChatRequest.model_construct(
+                    queryUid=request.queryUid,
+                    traceId=request.traceId,
+                    conversationUid=request.conversationUid,
+                    message=resolved_message,
+                ),
+                repository=library_repository,
+            )
+            topic = resolved_message
+            if getattr(response, "summary", None) and isinstance(response.summary, dict):
+                title = response.summary.get("title")
+                if isinstance(title, str) and title.strip():
+                    topic = title.strip()
+            _remember_orchestrator_context(
+                str(request.conversationUid),
+                route_result.targetAgent,
+                _extract_memory_topic(topic),
+            )
+            logger.info(
+                "orchestrator.chat done query_uid=%s target_agent=%s elapsed_ms=%d",
+                request.queryUid,
+                route_result.targetAgent,
+                int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            )
+            return response
+
+        if route_result.targetAgent == "DOCUMENT_REVIEW":
+            if request.document is None or not request.document.bodyText.strip():
+                response = _build_document_review_input_required_response(route_result.confidence)
+                _remember_orchestrator_context(
+                    str(request.conversationUid),
+                    route_result.targetAgent,
+                    _extract_memory_topic(resolved_message),
+                )
+                logger.info(
+                    "orchestrator.chat done query_uid=%s target_agent=%s requires_document_input=true elapsed_ms=%d",
+                    request.queryUid,
+                    route_result.targetAgent,
+                    int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+                )
+                return response
+            response = run_document_review_agent(
+                DocumentReviewRequest(
+                    queryUid=request.queryUid,
+                    traceId=request.traceId,
+                    conversationUid=request.conversationUid,
+                    message=resolved_message,
+                    document=request.document,
+                )
+            )
+            _remember_orchestrator_context(
+                str(request.conversationUid),
+                route_result.targetAgent,
+                _extract_memory_topic(resolved_message),
+            )
+            logger.info(
+                "orchestrator.chat done query_uid=%s target_agent=%s elapsed_ms=%d",
+                request.queryUid,
+                route_result.targetAgent,
+                int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            )
+            return response
+
+        logger.info(
+            "orchestrator.chat fallback query_uid=%s elapsed_ms=%d",
+            request.queryUid,
+            int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+        )
+        return _build_fallback_response("질문을 이해하지 못했습니다. 관련 주제로 다시 입력해 주세요.")
+    except Exception:
+        logger.exception(
+            "orchestrator.chat failed query_uid=%s trace_id=%s conversation_uid=%s",
+            request.queryUid,
+            request.traceId,
+            request.conversationUid,
+        )
+        raise
 
 
 def stream_orchestrator_chat(

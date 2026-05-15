@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 
 import uvicorn
@@ -14,6 +15,11 @@ from agents.orchestrator.api.router import router as orchestrator_router
 from ingestion.api.router import router as ingestion_router
 
 load_dotenv()
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 app = FastAPI(title="AX-Prontier AI", version="0.1.0")
 allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "*")

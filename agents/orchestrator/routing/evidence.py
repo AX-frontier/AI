@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import logging
 
 from agents.document_review.routing import collect_document_review_evidence
 from agents.library.classifier import classify_intent, extract_search_keyword
@@ -11,6 +12,18 @@ from agents.main_agent.embedding import EmbeddingProvider, get_embedding_provide
 from agents.main_agent.repository import MainChunkRepository, get_main_chunk_repository
 from agents.main_agent.retrieval import MainRetriever
 
+logger = logging.getLogger(__name__)
+_LIBRARY_BOOK_INTENTS = {"BOOK_SEARCH", "BOOK_LOCATION", "BOOK_RECOMMENDATION"}
+_BOOK_REQUEST_HINTS = (
+    "책",
+    "저자",
+    "작가",
+    "출판사",
+    "청구기호",
+    "서가",
+    "자료실",
+    "isbn",
+)
 
 @dataclass(frozen=True)
 class AgentEvidence:
@@ -46,21 +59,35 @@ class RoutingEvidenceCollector:
         text = message.strip()
         doc_evidence = self._collect_document_review_evidence(text)
         if doc_evidence.score >= self._DOCUMENT_REVIEW_FAST_PATH_SCORE:
-            return RoutingEvidence(
+            result = RoutingEvidence(
                 main=AgentEvidence(score=0.0, reason="skipped: document review fast path"),
                 library=AgentEvidence(score=0.0, reason="skipped: document review fast path"),
                 document_review=doc_evidence,
             )
+            logger.info(
+                "orchestrator.evidence main=%.3f library=%.3f document_review=%.3f fast_path=true",
+                result.main.score,
+                result.library.score,
+                result.document_review.score,
+            )
+            return result
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_main = pool.submit(self._collect_main_evidence, text)
             future_lib  = pool.submit(self._collect_library_evidence, text)
             main_evidence    = future_main.result()
             library_evidence = future_lib.result()
-        return RoutingEvidence(
+        result = RoutingEvidence(
             main=main_evidence,
             library=library_evidence,
             document_review=doc_evidence,
         )
+        logger.info(
+            "orchestrator.evidence main=%.3f library=%.3f document_review=%.3f",
+            result.main.score,
+            result.library.score,
+            result.document_review.score,
+        )
+        return result
 
     def _collect_main_evidence(self, message: str) -> AgentEvidence:
         repository = self._main_repository or get_main_chunk_repository()
@@ -79,6 +106,12 @@ class RoutingEvidenceCollector:
         )
 
     def _collect_library_evidence(self, message: str) -> AgentEvidence:
+        normalized = message.lower().strip()
+        if not _looks_like_book_request(normalized):
+            return AgentEvidence(
+                score=0.0,
+                reason="library routing limited to explicit book-search requests",
+            )
         repository = self._library_repository or get_library_repository()
         book_retriever = BookRetriever(repository)
         guide_retriever = GuideRetriever(repository)
@@ -90,6 +123,14 @@ class RoutingEvidenceCollector:
             guide_retriever=guide_retriever,
         )
         classification = classify_intent(message, evidence=retrieval_evidence)
+        if classification.intent not in _LIBRARY_BOOK_INTENTS:
+            return AgentEvidence(
+                score=0.0,
+                reason=(
+                    "library routing limited to book search intents; "
+                    f"classified intent={classification.intent}"
+                ),
+            )
         return AgentEvidence(
             score=classification.confidence,
             reason=classification.reason,
@@ -98,3 +139,11 @@ class RoutingEvidenceCollector:
     def _collect_document_review_evidence(self, message: str) -> AgentEvidence:
         evidence = collect_document_review_evidence(message)
         return AgentEvidence(score=evidence.score, reason=evidence.reason)
+
+
+def _looks_like_book_request(normalized: str) -> bool:
+    if any(hint in normalized for hint in _BOOK_REQUEST_HINTS):
+        return True
+    if "도서관" in normalized and "검색" in normalized:
+        return True
+    return False

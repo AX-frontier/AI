@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
+
 from fastapi.testclient import TestClient
 
 from agents.library.api.router import get_library_repository
 from agents.library.models import BookRecord
 from agents.main_agent.api.router import get_main_embedding_provider, get_main_llm_client
+from agents.main_agent.embedding import get_embedding_provider
 from agents.main_agent.embedding import DeterministicEmbeddingProvider
 from agents.main_agent.llm.mock import MockLLMClient
 from agents.main_agent.models import MainChunkRecord
@@ -13,6 +16,10 @@ from agents.orchestrator.api.router import get_routing_evidence_collector
 from agents.orchestrator.routing.evidence import AgentEvidence, RoutingEvidence
 from agents.orchestrator.service import _ORCH_FOLLOWUP_MEMORY
 from app import app
+
+os.environ["MAIN_AGENT_EMBEDDING_PROVIDER"] = "deterministic"
+os.environ["MAIN_AGENT_EMBEDDING_DIMENSIONS"] = "1536"
+get_embedding_provider.cache_clear()
 
 
 class FixedEvidenceCollector:
@@ -219,7 +226,7 @@ def test_orchestrator_route_endpoint_prioritizes_explicit_document_review() -> N
     assert payload["evidence"]["documentReviewScore"] == 0.85
 
 
-def test_orchestrator_route_endpoint_returns_fallback_for_unrelated_query() -> None:
+def test_orchestrator_route_endpoint_returns_main_for_unrelated_query() -> None:
     _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
@@ -244,8 +251,8 @@ def test_orchestrator_route_endpoint_returns_fallback_for_unrelated_query() -> N
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["targetAgent"] == "FALLBACK"
-    assert payload["intent"] == "FALLBACK"
+    assert payload["targetAgent"] == "MAIN"
+    assert payload["intent"] == "MAIN"
     assert "evidence" in payload
 
 
@@ -381,7 +388,7 @@ def test_orchestrator_chat_endpoint_requests_document_input_when_document_body_m
     assert "문서 본문" in payload["answer"]
 
 
-def test_orchestrator_chat_endpoint_returns_fallback_for_unrelated_query() -> None:
+def test_orchestrator_chat_endpoint_routes_main_for_unrelated_query() -> None:
     _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
@@ -390,6 +397,9 @@ def test_orchestrator_chat_endpoint_returns_fallback_for_unrelated_query() -> No
             document_review=AgentEvidence(score=0.0, reason="no document hit"),
         )
     )
+    app.dependency_overrides[get_main_chunk_repository] = lambda: OrchestratorMainMockRepository()
+    app.dependency_overrides[get_main_embedding_provider] = lambda: DeterministicEmbeddingProvider()
+    app.dependency_overrides[get_main_llm_client] = lambda: MockLLMClient("메인 에이전트 응답입니다.")
     client = TestClient(app)
 
     response = client.post(
@@ -406,8 +416,8 @@ def test_orchestrator_chat_endpoint_returns_fallback_for_unrelated_query() -> No
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["targetAgent"] == "FALLBACK"
-    assert payload["fallbackUsed"] is True
+    assert payload["targetAgent"] == "MAIN"
+    assert payload["fallbackUsed"] is False
 
 
 def test_route_recomputes_and_switches_library_to_main_on_new_query() -> None:
@@ -419,6 +429,7 @@ def test_route_recomputes_and_switches_library_to_main_on_new_query() -> None:
             document_review=AgentEvidence(score=0.0, reason="no document hit"),
         )
     )
+    app.dependency_overrides[get_library_repository] = lambda: OrchestratorLibraryMockRepository()
     client = TestClient(app)
 
     first = client.post(
