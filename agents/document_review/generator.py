@@ -9,10 +9,11 @@ from agents.document_review.api.schemas import (
     ExtractedTable,
     FormatNoticeItemResponse,
     RevisedDocument,
+    TableCheckResponse,
     ReviewFinding,
     ReviewSummary,
 )
-from agents.document_review.models import CheckRequiredItem, FormatNoticeItem, RuleFinding
+from agents.document_review.models import CheckRequiredItem, FormatNoticeItem, RuleFinding, TableCheckItem
 
 RULE_CRITERION_MAP = {
     "DATE_FORMAT": "날짜 표기",
@@ -22,7 +23,9 @@ RULE_CRITERION_MAP = {
     "ENDING_EXPRESSION": "문장 종결 표현",
     "END_MARKER": "끝표시",
     "ATTACHMENT_SPACING": "붙임 표시",
+    "ATTACHMENT_LABEL": "붙임 표시",
     "ITEM_SPACING": "항목 번호 체계",
+    "ITEM_MARKER_STYLE": "항목 번호 체계",
     "SINGLE_ITEM_NUMBERING": "항목 번호 체계",
 }
 
@@ -48,6 +51,8 @@ def build_document_review_response(
     findings: list[RuleFinding],
     checks: list[CheckRequiredItem],
     format_notices: list[FormatNoticeItem],
+    table_checks: list[TableCheckItem],
+    table_checks_available: bool,
     extracted_tables: list[ExtractedTable],
     revised_text: str,
     revised_html: str | None,
@@ -84,6 +89,20 @@ def build_document_review_response(
         FormatNoticeItemResponse(category=item.category, message=item.message)
         for item in format_notices
     ]
+    table_check_items = [
+        TableCheckResponse(
+            id=f"table-check-{index:03d}",
+            tableIndex=item.table_index,
+            tableTitle=item.table_title,
+            category=item.category,
+            severity=item.severity,
+            status=item.status,
+            message=item.message,
+            suggestion=item.suggestion,
+            evidence=item.evidence,
+        )
+        for index, item in enumerate(table_checks, start=1)
+    ]
     if extracted_tables:
         notice_items.append(
             FormatNoticeItemResponse(
@@ -93,7 +112,14 @@ def build_document_review_response(
         )
     summary = _build_summary(findings)
     criteria = _build_criteria(findings, checks, format_notices)
-    markdown = _build_review_markdown(summary, response_findings, check_items, notice_items)
+    markdown = _build_review_markdown(
+        summary,
+        response_findings,
+        check_items,
+        notice_items,
+        table_check_items,
+        table_checks_available,
+    )
     if not used_document_body:
         markdown = (
             "전용 문서 본문 필드가 없어 message를 임시 본문으로 검토했습니다. "
@@ -110,6 +136,8 @@ def build_document_review_response(
         checkRequiredItems=check_items,
         formatNoticeItems=notice_items,
         extractedTables=extracted_tables,
+        tableChecks=table_check_items,
+        tableChecksAvailable=table_checks_available,
         revisedDocument=RevisedDocument(content=revised_text, htmlContent=revised_html),
         reviewMarkdown=markdown,
         confidence=0.82 if used_document_body else 0.55,
@@ -137,6 +165,8 @@ def build_fallback_response(reason: str) -> DocumentReviewResponse:
         checkRequiredItems=[],
         formatNoticeItems=[],
         extractedTables=[],
+        tableChecks=[],
+        tableChecksAvailable=False,
         revisedDocument=RevisedDocument(content=""),
         reviewMarkdown=markdown,
         confidence=0.0,
@@ -212,6 +242,8 @@ def _build_review_markdown(
     findings: list[ReviewFinding],
     checks: list[CheckRequiredItemResponse],
     notices: list[FormatNoticeItemResponse],
+    table_checks: list[TableCheckResponse],
+    table_checks_available: bool,
 ) -> str:
     lines = [
         "## 문서 검토 결과",
@@ -242,6 +274,20 @@ def _build_review_markdown(
             lines.append(f"- {item.category} / {location}: {item.message}")
     else:
         lines.append("- 사실관계 확인 항목 없음")
+
+    if table_checks_available:
+        lines.extend(["", "<!-- TABLE_CHECKS_START -->", "### 표 검토 결과"])
+        if table_checks:
+            for item in table_checks:
+                lines.extend(
+                    [
+                        f"- [{item.severity}] 표 {item.tableIndex} {item.tableTitle}: {item.message}",
+                        f"  - 권장 조치: {item.suggestion}",
+                    ]
+                )
+        else:
+            lines.append("- 표에서 자동 검토 가능한 오류는 발견되지 않았습니다.")
+        lines.append("<!-- TABLE_CHECKS_END -->")
 
     lines.extend(["", "### 서식 참고"])
     for item in notices:

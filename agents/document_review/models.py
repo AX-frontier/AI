@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 FindingSeverity = Literal["HIGH", "MEDIUM", "LOW"]
 ReviewStatus = Literal["SUITABLE", "REVISION_REQUIRED", "CHECK_REQUIRED", "NOT_APPLICABLE"]
@@ -39,3 +39,15 @@ class CheckRequiredItem:
 class FormatNoticeItem:
     category: str
     message: str
+
+
+@dataclass(frozen=True, slots=True)
+class TableCheckItem:
+    table_index: int
+    table_title: str
+    category: str
+    severity: FindingSeverity
+    status: ReviewStatus
+    message: str
+    suggestion: str
+    evidence: dict[str, Any]
