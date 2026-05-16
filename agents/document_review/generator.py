@@ -27,6 +27,7 @@ RULE_CRITERION_MAP = {
     "ITEM_SPACING": "항목 번호 체계",
     "ITEM_MARKER_STYLE": "항목 번호 체계",
     "SINGLE_ITEM_NUMBERING": "항목 번호 체계",
+    "DECLARED_AMOUNT_MISMATCH": "금액 표기",
 }
 
 CRITERIA = (
@@ -105,13 +106,6 @@ def build_document_review_response(
         )
         for index, item in enumerate(table_checks, start=1)
     ]
-    if extracted_tables:
-        notice_items.append(
-            FormatNoticeItemResponse(
-                category="표 구조",
-                message=f"HTML 본문에서 표 {len(extracted_tables)}개를 인식했습니다. 표 검토는 추출된 셀 구조를 기준으로 수행할 수 있습니다.",
-            )
-        )
     summary = _build_summary(findings)
     criteria = _build_criteria(findings, checks, format_notices)
     markdown = _build_review_markdown(
@@ -252,7 +246,6 @@ def _build_review_markdown(
         "",
         f"- 검토 범위: {summary.reviewScope}",
         f"- 수정 제안: {summary.totalFindingCount}건",
-        f"- 중요도: HIGH {summary.highCount}건 / MEDIUM {summary.mediumCount}건 / LOW {summary.lowCount}건",
         "",
         "### 자동 수정 제안",
     ]
@@ -260,7 +253,7 @@ def _build_review_markdown(
         for finding in findings:
             lines.extend(
                 [
-                    f"- [{finding.severity}] {finding.category} / {finding.ruleCode} / {finding.lineStart}행",
+                    f"- {finding.category} / {finding.ruleCode} / {finding.lineStart}행",
                     f"  - 원문: {finding.originalText}",
                     f"  - 수정안: {finding.suggestedText or '확인 필요'}",
                     f"  - 사유: {finding.reason}",
@@ -269,27 +262,18 @@ def _build_review_markdown(
     else:
         lines.append("- 자동 수정 제안 없음")
 
-    lines.extend(["", "### 사람 확인 필요"])
-    if checks:
+    lines.extend(["", "### 직접 확인 필요"])
+    if checks or table_checks or not table_checks_available:
         for item in checks:
             location = f"{item.lineStart}행" if item.lineStart else "문서 전체"
             lines.append(f"- {item.category} / {location}: {item.message}")
-    else:
-        lines.append("- 사실관계 확인 항목 없음")
-
-    if table_checks_available:
-        lines.extend(["", "<!-- TABLE_CHECKS_START -->", "### 표 검토 결과"])
         if table_checks:
             for item in table_checks:
-                lines.extend(
-                    [
-                        f"- [{item.severity}] 표 {item.tableIndex} {item.tableTitle}: {item.message}",
-                        f"  - 권장 조치: {item.suggestion}",
-                    ]
-                )
-        else:
-            lines.append("- 표에서 자동 검토 가능한 오류는 발견되지 않았습니다.")
-        lines.append("<!-- TABLE_CHECKS_END -->")
+                lines.append(f"- 표 검토 / 표 {item.tableIndex} {item.tableTitle}: {item.message} 권장 조치: {item.suggestion}")
+        if not table_checks_available:
+            lines.append("- 표 검토 / 문서 전체: 표 검토를 수행하지 못했습니다. 원본 전자결재/HWP 표에서 금액과 필수 항목을 직접 확인해 주세요.")
+    else:
+        lines.append("- 직접 확인 항목 없음")
 
     lines.extend(["", "### 서식 참고"])
     for item in notices:
