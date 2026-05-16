@@ -9,6 +9,29 @@ from agents.main_agent.models import MainChunkRecord
 from agents.main_agent.retrieval import MainSearchResult
 
 MAIN_VECTOR_THRESHOLD = 0.45
+MAIN_TOPIC_MISMATCH_THRESHOLD = 0.34
+MAIN_OPERATIONAL_HELP_TERMS = (
+    "잃어버",
+    "분실",
+    "전화",
+    "연락",
+    "문의처",
+    "어디에",
+    "어디로",
+)
+MAIN_LOST_ITEM_QUERY_TERMS = ("잃어버", "분실", "유실", "습득")
+MAIN_LOST_ITEM_EVIDENCE_TERMS = (
+    "분실",
+    "유실",
+    "습득",
+    "유실물",
+    "lost",
+    "found",
+    "인포메이션데스크",
+    "학생처",
+    "총무",
+    "민원",
+)
 MAIN_LINK_AMBIGUOUS_ABS_GAP_THRESHOLD = 0.05
 MAIN_LINK_AMBIGUOUS_RATIO_THRESHOLD = 1.08
 MAIN_LINK_SINGLE_TOP1_THRESHOLD = 0.85
@@ -30,13 +53,24 @@ def build_main_response(
 ) -> MainChatResponse:
     """검색된 chunk를 Spring 호환 Main Agent 응답으로 변환한다."""
     if not result.chunks:
-        return build_main_fallback_response(result.keyword, "관련 학교 공지 또는 안내 chunk를 찾지 못했습니다.")
+        return build_main_fallback_response(
+            result.keyword,
+            "관련 학교 공지 또는 안내 chunk를 찾지 못했습니다.",
+            reason_code="NO_CHUNKS",
+        )
 
     primary = result.chunks[0]
     if primary.score < MAIN_VECTOR_THRESHOLD:
         return build_main_fallback_response(
             result.keyword,
             "관련 학교 공지 또는 안내 chunk의 유사도가 낮습니다.",
+            reason_code="LOW_SIMILARITY",
+        )
+    if _looks_topic_mismatch(result.keyword, result.chunks):
+        return build_main_fallback_response(
+            result.keyword,
+            "질문과 직접적으로 일치하는 공지 데이터를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
+            reason_code="TOPIC_MISMATCH_NO_DATA",
         )
 
     answer = _generate_answer(result, llm_client) if llm_client else _compose_answer(result)
@@ -54,7 +88,12 @@ def build_main_response(
     )
 
 
-def build_main_fallback_response(keyword: str, reason: str) -> MainChatResponse:
+def build_main_fallback_response(
+    keyword: str,
+    reason: str,
+    *,
+    reason_code: str = "GENERIC",
+) -> MainChatResponse:
     return MainChatResponse(
         intent="MAIN_GENERAL",
         answer=f"{reason} 공식 공지나 학사 안내 데이터가 적재된 뒤 다시 확인해 주세요.",
@@ -62,6 +101,7 @@ def build_main_fallback_response(keyword: str, reason: str) -> MainChatResponse:
         confidence=0.35,
         fallbackUsed=True,
         fallbackReason=reason,
+        fallbackReasonCode=reason_code,
         searchKeyword=keyword,
         resultCount=0,
     )
@@ -305,3 +345,84 @@ def _summarize_text(text: str, max_length: int = 320) -> str:
     if len(compact) <= max_length:
         return compact
     return compact[: max_length - 1].rstrip() + "..."
+
+
+def _looks_topic_mismatch(keyword: str, chunks: list[MainChunkRecord]) -> bool:
+    if not chunks:
+        return False
+    if not _looks_operational_help_query(keyword):
+        return False
+    if _looks_lost_item_query(keyword) and not _has_lost_item_evidence(chunks[:3]):
+        return True
+    terms = _extract_query_terms(keyword)
+    if not terms:
+        return False
+    top_chunks = chunks[:3]
+    matched_terms: set[str] = set()
+    for term in terms:
+        if any(_term_in_chunk(term, chunk) for chunk in top_chunks):
+            matched_terms.add(term)
+    coverage = len(matched_terms) / len(terms)
+    return coverage < MAIN_TOPIC_MISMATCH_THRESHOLD
+
+
+def _looks_operational_help_query(keyword: str) -> bool:
+    normalized = (keyword or "").lower()
+    return any(term in normalized for term in MAIN_OPERATIONAL_HELP_TERMS)
+
+
+def _extract_query_terms(keyword: str) -> list[str]:
+    raw_terms = re.findall(r"[0-9A-Za-z가-힣]+", keyword.lower())
+    stop_terms = {
+        "오늘",
+        "지금",
+        "뭐",
+        "뭐가",
+        "있어",
+        "있나요",
+        "알려줘",
+        "문의",
+        "공지",
+        "사항",
+        "어디",
+        "전화",
+        "방법",
+    }
+    terms: list[str] = []
+    for term in raw_terms:
+        if len(term) < 2:
+            continue
+        if term in stop_terms:
+            continue
+        terms.append(term)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        if term in seen:
+            continue
+        seen.add(term)
+        deduped.append(term)
+    return deduped
+
+
+def _term_in_chunk(term: str, chunk: MainChunkRecord) -> bool:
+    title = (chunk.title or "").lower()
+    text = (chunk.text or "").lower()
+    category = (chunk.category or "").lower()
+    return term in title or term in text or term in category
+
+
+def _looks_lost_item_query(keyword: str) -> bool:
+    normalized = (keyword or "").lower()
+    return any(term in normalized for term in MAIN_LOST_ITEM_QUERY_TERMS)
+
+
+def _has_lost_item_evidence(chunks: list[MainChunkRecord]) -> bool:
+    for chunk in chunks:
+        title = (chunk.title or "").lower()
+        text = (chunk.text or "").lower()
+        category = (chunk.category or "").lower()
+        combined = f"{title} {text} {category}"
+        if any(term in combined for term in MAIN_LOST_ITEM_EVIDENCE_TERMS):
+            return True
+    return False

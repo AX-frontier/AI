@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from agents.library.models import BookRecord
+from agents.library.models import GuideDocRecord
 from agents.main_agent.models import MainChunkRecord
 from agents.orchestrator.routing.evidence import AgentEvidence, RoutingEvidence, RoutingEvidenceCollector
 from agents.orchestrator.routing.router import EvidenceBasedRouter
@@ -66,6 +69,16 @@ class RecordingLibraryRepository:
 
     def search_guide_docs(self, keyword: str, limit: int = 3) -> list:
         self.guide_keywords.append(keyword)
+        if "도서관" in keyword or "학술정보관" in keyword or "대출" in keyword:
+            return [
+                GuideDocRecord(
+                    id=1,
+                    source_url="https://library.example.edu/guide",
+                    title="학술정보관 대출/반납 안내",
+                    content="대출 연장과 반납 절차 안내",
+                    updated_at=datetime(2026, 1, 1),
+                )
+            ]
         return []
 
 
@@ -210,7 +223,7 @@ def test_library_evidence_uses_intent_aware_keyword_cleanup() -> None:
     assert "book search hits: 1" in evidence.reason
 
 
-def test_library_evidence_is_disabled_for_non_book_intent() -> None:
+def test_library_evidence_collects_hits_even_for_non_book_intent() -> None:
     repository = RecordingLibraryRepository()
 
     evidence = RoutingEvidenceCollector(
@@ -218,8 +231,22 @@ def test_library_evidence_is_disabled_for_non_book_intent() -> None:
         embedding_provider=FixedEmbeddingProvider(),
     )._collect_library_evidence("도서관 몇 시까지 해?")
 
-    assert evidence.score == 0.0
-    assert "library routing limited to explicit book-search requests" in evidence.reason
+    assert evidence.score >= 0.4
+    assert "intent=" in evidence.reason
+    assert "guide_hits=" in evidence.reason
+
+
+def test_library_evidence_for_library_loan_extension_query_is_non_zero() -> None:
+    repository = RecordingLibraryRepository()
+
+    evidence = RoutingEvidenceCollector(
+        library_repository=repository,
+        embedding_provider=FixedEmbeddingProvider(),
+    )._collect_library_evidence("학술정보관 이용 안내로 대출 연장 방법 알려줘")
+
+    assert evidence.score >= 0.4
+    assert "book_hits=" in evidence.reason
+    assert "guide_hits=" in evidence.reason
 
 
 def test_document_review_evidence_comes_from_document_review_classifier() -> None:

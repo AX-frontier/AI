@@ -13,17 +13,13 @@ from agents.main_agent.repository import MainChunkRepository, get_main_chunk_rep
 from agents.main_agent.retrieval import MainRetriever
 
 logger = logging.getLogger(__name__)
-_LIBRARY_BOOK_INTENTS = {"BOOK_SEARCH", "BOOK_LOCATION", "BOOK_RECOMMENDATION"}
-_BOOK_REQUEST_HINTS = (
-    "책",
-    "저자",
-    "작가",
-    "출판사",
-    "청구기호",
-    "서가",
-    "자료실",
-    "isbn",
-)
+_LIBRARY_ROUTABLE_INTENTS = {
+    "BOOK_SEARCH",
+    "BOOK_LOCATION",
+    "BOOK_RECOMMENDATION",
+    "LIBRARY_GUIDE",
+}
+_LIBRARY_EVIDENCE_FLOOR_WITH_HITS = 0.4
 
 @dataclass(frozen=True)
 class AgentEvidence:
@@ -106,12 +102,6 @@ class RoutingEvidenceCollector:
         )
 
     def _collect_library_evidence(self, message: str) -> AgentEvidence:
-        normalized = message.lower().strip()
-        if not _looks_like_book_request(normalized):
-            return AgentEvidence(
-                score=0.0,
-                reason="library routing limited to explicit book-search requests",
-            )
         repository = self._library_repository or get_library_repository()
         book_retriever = BookRetriever(repository)
         guide_retriever = GuideRetriever(repository)
@@ -123,27 +113,25 @@ class RoutingEvidenceCollector:
             guide_retriever=guide_retriever,
         )
         classification = classify_intent(message, evidence=retrieval_evidence)
-        if classification.intent not in _LIBRARY_BOOK_INTENTS:
-            return AgentEvidence(
-                score=0.0,
-                reason=(
-                    "library routing limited to book search intents; "
-                    f"classified intent={classification.intent}"
-                ),
-            )
-        return AgentEvidence(
-            score=classification.confidence,
-            reason=classification.reason,
+        guide_hits = retrieval_evidence.guide_hits
+        book_hits = retrieval_evidence.book_hits
+        intent = classification.intent
+        confidence = classification.confidence
+
+        score = confidence if intent in _LIBRARY_ROUTABLE_INTENTS else 0.0
+        if guide_hits > 0 or book_hits > 0:
+            score = max(score, _LIBRARY_EVIDENCE_FLOOR_WITH_HITS)
+
+        score = round(max(0.0, min(1.0, score)), 3)
+        reason = (
+            f"library evidence intent={intent} confidence={confidence:.3f} "
+            f"book_hits={book_hits} guide_hits={guide_hits}; {classification.reason}"
         )
+
+        if classification.intent not in _LIBRARY_ROUTABLE_INTENTS:
+            return AgentEvidence(score=score, reason=reason)
+        return AgentEvidence(score=score, reason=reason)
 
     def _collect_document_review_evidence(self, message: str) -> AgentEvidence:
         evidence = collect_document_review_evidence(message)
         return AgentEvidence(score=evidence.score, reason=evidence.reason)
-
-
-def _looks_like_book_request(normalized: str) -> bool:
-    if any(hint in normalized for hint in _BOOK_REQUEST_HINTS):
-        return True
-    if "도서관" in normalized and "검색" in normalized:
-        return True
-    return False

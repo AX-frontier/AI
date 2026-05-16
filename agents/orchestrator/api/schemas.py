@@ -8,7 +8,7 @@ from agents.document_review.api.schemas import DocumentReviewResponse, ReviewDoc
 from agents.library.api.schemas import LibraryChatResponse
 from agents.main_agent.api.schemas import MainChatResponse
 
-TargetAgent = Literal["MAIN", "LIBRARY", "DOCUMENT_REVIEW", "FALLBACK"]
+TargetAgent = Literal["MAIN", "LIBRARY", "DOCUMENT_REVIEW", "FALLBACK", "DATA_PREPARING"]
 RoutingMode = Literal["FRESH", "FOLLOWUP_STICKY"]
 RoutingReasonCode = Literal[
     "FRESH_DEFAULT",
@@ -16,6 +16,7 @@ RoutingReasonCode = Literal[
     "FOLLOWUP_REUSE",
     "EVIDENCE_SWITCH",
     "AMBIGUOUS_LOW_MARGIN",
+    "NO_RELEVANT_DATA",
 ]
 
 
@@ -85,10 +86,21 @@ class DocumentReviewInputRequiredResponse(BaseModel):
     requiresDocumentInput: bool = True
 
 
+class DataPreparingResponse(BaseModel):
+    targetAgent: Literal["DATA_PREPARING"] = "DATA_PREPARING"
+    intent: Literal["DATA_PREPARING"] = "DATA_PREPARING"
+    answer: str
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    confidence: float = 0.0
+    fallbackUsed: bool = True
+    fallbackReason: str
+
+
 OrchestratorChatResponse = (
     MainChatResponse
     | LibraryChatResponse
     | DocumentReviewResponse
     | DocumentReviewInputRequiredResponse
+    | DataPreparingResponse
     | OrchestratorFallbackResponse
 )
