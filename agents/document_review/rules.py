@@ -24,6 +24,7 @@ from agents.document_review.models import (
 
 AMOUNT_TOLERANCE_WON = 1
 SMALL_AMOUNT_DIFF_WON = 1000
+MAX_DECLARED_AMOUNT_REWRITE_RATIO = 10
 ITEM_MARKER_PATTERN = re.compile(
     r"^(?P<indent>[ \t\u00a0\u3000]*)(?P<marker>\d+\.|[가-힣]\.|\d+\)|[가-힣]\)|\(\d+\)|\([가-힣]\)|[①-⑳]|[㉮-㉻])(?P<spaces>[^\S\r\n]*)(?P<content>\S.*)$"
 )
@@ -120,6 +121,9 @@ def apply_safe_suggestions_to_html(body_html: str | None, findings: list[RuleFin
         if finding.rule_code == "ITEM_MARKER_STYLE":
             revised = _apply_item_marker_style_to_html(revised, finding)
             continue
+        if finding.rule_code == "DECLARED_AMOUNT_MISMATCH":
+            revised = _apply_declared_amount_to_html(revised, finding)
+            continue
         revised = _apply_text_replacement_outside_tables(
             revised,
             finding.original_text,
@@ -188,6 +192,91 @@ def _apply_text_replacement_outside_tables(body_html: str, original_text: str, s
             text_node.replace_with(revised)
             return str(soup)
     return body_html
+
+
+def _apply_declared_amount_to_html(body_html: str, finding: RuleFinding) -> str:
+    if finding.suggested_text is None:
+        return body_html
+
+    direct_revised = _apply_text_replacement_outside_tables(
+        body_html,
+        finding.original_text,
+        finding.suggested_text,
+    )
+    if direct_revised != body_html:
+        return direct_revised
+
+    soup = BeautifulSoup(body_html, "html.parser")
+    original_compact = _compact_text(finding.original_text)
+    for element in soup.find_all(["p", "div", "span"]):
+        if _is_inside_protected_table(element):
+            continue
+        if element.find("table"):
+            continue
+        text = element.get_text("", strip=False)
+        if not text or len(text) > 500:
+            continue
+        if original_compact not in _compact_text(text):
+            continue
+        pattern = _declared_amount_pattern(finding)
+        if pattern and _replace_text_across_descendants(element, pattern, finding.suggested_text):
+            return str(soup)
+    return body_html
+
+
+def _replace_declared_amount_text(text: str, finding: RuleFinding) -> str:
+    if finding.suggested_text is None:
+        return text
+    pattern = _declared_amount_pattern(finding)
+    if pattern:
+        return pattern.sub(finding.suggested_text, text, count=1)
+    return text.replace(finding.original_text, finding.suggested_text, 1)
+
+
+def _declared_amount_pattern(finding: RuleFinding) -> re.Pattern[str] | None:
+    match = re.search(r"금([0-9,]+)원(?:\(금([가-힣]+)원?\))?", finding.original_text)
+    if not match:
+        return None
+    numeric = re.escape(match.group(1)).replace(",", r"\s*,\s*")
+    korean = match.group(2)
+    korean_part = rf"\s*\(\s*금\s*{re.escape(korean)}\s*원?\s*\)" if korean else r"(?:\s*\(\s*금\s*[가-힣]+\s*원?\s*\))?"
+    return re.compile(rf"금\s*{numeric}\s*원{korean_part}")
+
+
+def _replace_text_across_descendants(element, pattern: re.Pattern[str], replacement: str) -> bool:
+    nodes = [node for node in element.find_all(string=True) if not _is_inside_protected_table(node)]
+    if not nodes:
+        return False
+    combined = "".join(str(node) for node in nodes)
+    match = pattern.search(combined)
+    if not match:
+        return False
+
+    start, end = match.span()
+    cursor = 0
+    touched = False
+    for node in nodes:
+        text = str(node)
+        node_start = cursor
+        node_end = cursor + len(text)
+        cursor = node_end
+        if node_end <= start or node_start >= end:
+            continue
+        local_start = max(start - node_start, 0)
+        local_end = min(end - node_start, len(text))
+        if not touched:
+            prefix = text[:local_start]
+            suffix = text[local_end:] if end <= node_end else ""
+            node.replace_with(f"{prefix}{replacement}{suffix}")
+            touched = True
+        else:
+            suffix = text[local_end:] if end <= node_end else ""
+            node.replace_with(suffix)
+    return touched
+
+
+def _compact_text(value: str) -> str:
+    return re.sub(r"[\s\u00a0\u3000]+", "", value)
 
 
 def _apply_attachment_label_to_html(body_html: str) -> str:
@@ -263,6 +352,7 @@ def review_rules(
     findings.extend(_review_document_level(lines))
     findings.extend(_review_single_item_sections(lines))
     findings.extend(_review_item_marker_styles(lines))
+    findings.extend(_review_declared_amount_against_tables(lines, tables))
     checks.extend(_review_related_documents(lines))
     checks.extend(_review_law_references(lines))
     checks.extend(_review_budget_tables(lines, tables))
@@ -890,6 +980,49 @@ def _review_amounts(line: DocumentLine) -> list[CheckRequiredItem]:
     return checks
 
 
+def _review_declared_amount_against_tables(lines: list[DocumentLine], tables: list[ExtractedTable]) -> list[RuleFinding]:
+    reference_amount = _trusted_table_reference_amount(tables)
+    if reference_amount is None:
+        return []
+    findings: list[RuleFinding] = []
+    for line in lines:
+        if "정산" not in line.text or "금액" not in line.text:
+            continue
+        match = re.search(r"금([0-9,]+)원(?:\(금([가-힣]+)원?\))?", line.text)
+        if not match:
+            continue
+        declared_amount = _parse_amount(match.group(1))
+        declared_korean = _parse_korean_number(match.group(2) or "") if match.group(2) else None
+        if declared_amount == reference_amount and declared_korean == reference_amount:
+            continue
+        if not _declared_amount_delta_is_safe(declared_amount, reference_amount):
+            continue
+        suggested_amount = f"금{reference_amount:,}원(금{_format_korean_number(reference_amount)}원)"
+        findings.append(
+            RuleFinding(
+                rule_code="DECLARED_AMOUNT_MISMATCH",
+                category="금액 표기",
+                severity="MEDIUM",
+                status="REVISION_REQUIRED",
+                line_start=line.number,
+                line_end=line.number,
+                original_text=match.group(0),
+                suggested_text=suggested_amount,
+                reason="상세 내역 표의 항목 금액 합계와 합계 행이 일치하므로, 본문 정산 금액을 표 합계에 맞춰 수정하는 것을 제안합니다.",
+            )
+        )
+        break
+    return findings
+
+
+def _declared_amount_delta_is_safe(declared_amount: int, reference_amount: int) -> bool:
+    smaller = min(declared_amount, reference_amount)
+    larger = max(declared_amount, reference_amount)
+    if smaller <= 0:
+        return False
+    return larger / smaller <= MAX_DECLARED_AMOUNT_REWRITE_RATIO
+
+
 def _review_basic_principles(lines: list[DocumentLine]) -> list[CheckRequiredItem]:
     """문서 작성 일반 원칙은 확정 교정보다 첫 의심 지점만 확인 항목으로 노출한다."""
     checks: list[CheckRequiredItem] = []
@@ -1160,8 +1293,8 @@ def _review_detail_amount_table(
             )
         )
 
-    total_amount = _extract_total_row_amount(table)
-    item_amount_sum = _sum_detail_item_amounts(table)
+    total_amount, total_column_index = _extract_total_row_amount_with_column(table)
+    item_amount_sum = _sum_detail_item_amounts(table, amount_column_index=total_column_index)
     if item_amount_sum is not None and total_amount is not None and _amounts_differ(item_amount_sum, total_amount):
         diff = abs(item_amount_sum - total_amount)
         checks.append(
@@ -1273,9 +1406,10 @@ def _find_detail_amount_table(tables: list[ExtractedTable]) -> ExtractedTable | 
         flattened = _flatten_table(table)
         if not all(keyword in flattened for keyword in ("구분", "건수", "금액", "비고")):
             continue
-        if _extract_total_row_amount(table) is None:
+        total_amount, total_column_index = _extract_total_row_amount_with_column(table)
+        if total_amount is None or total_column_index is None:
             continue
-        if _sum_detail_item_amounts(table) is None:
+        if _sum_detail_item_amounts(table, amount_column_index=total_column_index) is None:
             continue
         return table
     return None
@@ -1284,7 +1418,16 @@ def _find_detail_amount_table(tables: list[ExtractedTable]) -> ExtractedTable | 
 def _find_budget_amount_table(tables: list[ExtractedTable]) -> ExtractedTable | None:
     for table in tables:
         flattened = _flatten_table(table)
-        if all(keyword in flattened for keyword in ("회계연도", "세목", "소요예산")) and _extract_budget_table_amount(table) is not None:
+        has_budget_identity = (
+            "회계연도" in flattened
+            and "세목" in flattened
+            and (
+                "세목코드" in flattened
+                or "예산구분" in flattened
+                or "회계구분" in flattened
+            )
+        )
+        if has_budget_identity and _extract_budget_table_amount(table) is not None:
             return table
     return None
 
@@ -1303,8 +1446,13 @@ def _extract_declared_settlement_amount(text: str) -> int | None:
 
 
 def _extract_total_row_amount(table: ExtractedTable | None) -> int | None:
+    amount, _ = _extract_total_row_amount_with_column(table)
+    return amount
+
+
+def _extract_total_row_amount_with_column(table: ExtractedTable | None) -> tuple[int | None, int | None]:
     if not table:
-        return None
+        return None, None
     for row in table.rows:
         row_label = _normalize_label_text(" ".join(row))
         if "소계" in row_label or "누계" in row_label:
@@ -1312,13 +1460,14 @@ def _extract_total_row_amount(table: ExtractedTable | None) -> int | None:
         if "합계" not in row_label and "총계" not in row_label:
             continue
         amounts = [_parse_amount(cell) for cell in row]
-        values = [amount for amount in amounts if amount is not None]
-        if values:
-            return values[-1]
-    return None
+        indexed_values = [(index, amount) for index, amount in enumerate(amounts) if amount is not None]
+        if indexed_values:
+            index, amount = indexed_values[-1]
+            return amount, index
+    return None, None
 
 
-def _sum_detail_item_amounts(table: ExtractedTable) -> int | None:
+def _sum_detail_item_amounts(table: ExtractedTable, *, amount_column_index: int | None = None) -> int | None:
     amounts: list[int] = []
     for row in table.rows:
         row_text = " ".join(row)
@@ -1328,7 +1477,11 @@ def _sum_detail_item_amounts(table: ExtractedTable) -> int | None:
         if any(header in normalized_row for header in ("구분", "건수", "금액", "비고")):
             continue
         if len(row) >= 3:
-            amount = _parse_amount(row[-2]) or _parse_amount(row[-1])
+            amount = None
+            if amount_column_index is not None and amount_column_index < len(row):
+                amount = _parse_amount(row[amount_column_index])
+            if amount is None:
+                amount = _parse_amount(row[-2]) or _parse_amount(row[-1])
             if amount is not None:
                 amounts.append(amount)
     return sum(amounts) if amounts else None
@@ -1342,6 +1495,23 @@ def _severity_for_amount_diff(diff: int) -> str:
     if diff <= SMALL_AMOUNT_DIFF_WON:
         return "MEDIUM"
     return "HIGH"
+
+
+def _trusted_table_reference_amount(tables: list[ExtractedTable]) -> int | None:
+    detail_table = _find_detail_amount_table(tables)
+    if not detail_table:
+        return None
+    detail_total, total_column_index = _extract_total_row_amount_with_column(detail_table)
+    item_sum = _sum_detail_item_amounts(detail_table, amount_column_index=total_column_index)
+    if detail_total is None or item_sum is None or _amounts_differ(detail_total, item_sum):
+        return None
+    budget_table = _find_budget_amount_table(tables)
+    if not budget_table:
+        return None
+    budget_amount = _extract_budget_table_amount(budget_table)
+    if budget_amount is None or _amounts_differ(detail_total, budget_amount):
+        return None
+    return detail_total
 
 
 def _extract_budget_table_amount(table: ExtractedTable) -> int | None:
@@ -1368,6 +1538,37 @@ def _parse_amount(value: str | None) -> int | None:
         return int(match.group(1).replace(",", ""))
     except ValueError:
         return None
+
+
+def _format_korean_number(value: int) -> str:
+    if value == 0:
+        return "영"
+
+    digits = " 일이삼사오육칠팔구"
+    small_units = ["", "십", "백", "천"]
+    big_units = ["", "만", "억", "조"]
+
+    def section_to_korean(section: int) -> str:
+        parts: list[str] = []
+        for index in range(4):
+            digit = section % 10
+            if digit:
+                if digit == 1 and index > 0:
+                    parts.append(small_units[index])
+                else:
+                    parts.append(f"{digits[digit]}{small_units[index]}")
+            section //= 10
+        return "".join(reversed(parts))
+
+    sections: list[str] = []
+    unit_index = 0
+    while value > 0:
+        section = value % 10000
+        if section:
+            sections.append(f"{section_to_korean(section)}{big_units[unit_index]}")
+        value //= 10000
+        unit_index += 1
+    return "".join(reversed(sections))
 
 
 def _review_attachment_list(lines: list[DocumentLine]) -> list[CheckRequiredItem]:

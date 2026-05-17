@@ -606,6 +606,226 @@ def test_document_review_agent_skips_clean_table_checks() -> None:
     assert response.tableChecks == []
 
 
+def test_document_review_agent_sums_detail_amount_column_aligned_with_total() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000031",
+        traceId="00000000-0000-0000-0000-000000000032",
+        conversationUid="00000000-0000-0000-0000-000000000033",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "다. 정산 금액: 금254,400원\n"
+                "라. 상세 내역\n"
+                "마. 소요예산\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert response.tableChecks == []
+
+
+def test_document_review_agent_suggests_declared_amount_from_trusted_table_total() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000037",
+        traceId="00000000-0000-0000-0000-000000000038",
+        conversationUid="00000000-0000-0000-0000-000000000039",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "다. 정산 금액: 금169,320원(금이십육만구천삼백이십원)\n"
+                "라. 상세 내역\n"
+                "마. 소요예산\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<p>다. 정산 금액: 금169,320원(금이십육만구천삼백이십원)</p>"
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert any(finding.ruleCode == "DECLARED_AMOUNT_MISMATCH" for finding in response.findings)
+    assert "금254,400원(금이십오만사천사백원)" in response.revisedDocument.content
+    assert "금254,400원(금이십오만사천사백원)" in (response.revisedDocument.htmlContent or "")
+
+
+def test_document_review_agent_applies_declared_amount_when_html_text_is_split() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000041",
+        traceId="00000000-0000-0000-0000-000000000042",
+        conversationUid="00000000-0000-0000-0000-000000000043",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "다. 정산 금액: 금169,320원(금이십육만구천삼백이십원)\n"
+                "라. 상세 내역\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<p>다. 정산 금액: 금<span>169,320</span>원"
+                "<span>(금이십육만구천삼백이십원)</span></p>"
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert "금254,400원(금이십오만사천사백원)" in (response.revisedDocument.htmlContent or "")
+    assert "금169,320원" not in (response.revisedDocument.htmlContent or "")
+
+
+def test_document_review_agent_does_not_auto_rewrite_declared_amount_without_budget_confirmation() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000044",
+        traceId="00000000-0000-0000-0000-000000000045",
+        conversationUid="00000000-0000-0000-0000-000000000046",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "다. 정산 금액: 금169,320원(금이십육만구천삼백이십원)\n"
+                "라. 상세 내역\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<p>다. 정산 금액: 금169,320원(금이십육만구천삼백이십원)</p>"
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert all(finding.ruleCode != "DECLARED_AMOUNT_MISMATCH" for finding in response.findings)
+    assert "금169,320원" in response.revisedDocument.content
+    assert "금169,320원" in (response.revisedDocument.htmlContent or "")
+
+
+def test_document_review_agent_declared_amount_html_rewrite_skips_protected_table_text() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000047",
+        traceId="00000000-0000-0000-0000-000000000048",
+        conversationUid="00000000-0000-0000-0000-000000000049",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "다. 정산 금액: 금169,320원(금이십육만구천삼백이십원)\n"
+                "라. 상세 내역\n"
+                "마. 소요예산\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<p>다. 정산 금액: 금<span>169,320</span>원<span>(금이십육만구천삼백이십원)</span></p>"
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>금169,320원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    html = response.revisedDocument.htmlContent or ""
+    assert "금254,400원(금이십오만사천사백원)" in html
+    assert "<td>금169,320원</td>" in html
+
+
+def test_document_review_agent_flags_budget_header_without_treating_table_as_missing() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000034",
+        traceId="00000000-0000-0000-0000-000000000035",
+        conversationUid="00000000-0000-0000-0000-000000000036",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "다. 정산 금액: 금254,400원\n"
+                "라. 상세 내역\n"
+                "마. 소요예산\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td>금액(원)</td><td></td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td>1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td><td></td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>돈</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    messages = [item.message for item in response.tableChecks]
+    assert any("소요예산 표 필수 항목 확인이 필요합니다" in message for message in messages)
+    assert any("소요예산" in message for message in messages)
+    assert all("표 구조가 HTML 표로 인식되지 않았습니다" not in message for message in messages)
+
+
 def test_document_review_agent_does_not_flag_non_billing_table() -> None:
     request = DocumentReviewRequest(
         queryUid="00000000-0000-0000-0000-000000000007",
