@@ -36,6 +36,10 @@ MAIN_LINK_AMBIGUOUS_ABS_GAP_THRESHOLD = 0.05
 MAIN_LINK_AMBIGUOUS_RATIO_THRESHOLD = 1.08
 MAIN_LINK_SINGLE_TOP1_THRESHOLD = 0.85
 MAIN_LINK_DEFAULT_LIMIT = 3
+STRICT_MATCH_CHECK_TOP_N = 3
+SCHOLARSHIP_ANCHOR_TERMS = ("장학", "scholarship")
+SCHOLARSHIP_TITLE_TERMS = ("장학", "장학금", "장학생", "scholarship")
+SCHOLARSHIP_CATEGORY_TERMS = ("장학공지",)
 
 
 @dataclass(frozen=True)
@@ -71,9 +75,18 @@ def build_main_response(
             result.keyword,
             "질문과 직접적으로 일치하는 공지 데이터를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
             reason_code="TOPIC_MISMATCH_NO_DATA",
+            related_chunks=result.chunks,
+        )
+    links = select_source_links(result.chunks)
+    if _fails_strict_match_filter(result.keyword, links):
+        return build_main_fallback_response(
+            result.keyword,
+            "질문과 직접적으로 일치하는 공지 데이터를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
+            reason_code="GENERIC",
+            related_chunks=result.chunks,
         )
 
-    answer = _generate_answer(result, llm_client) if llm_client else _compose_answer(result)
+    answer = _generate_answer(result, llm_client, links=links) if llm_client else _compose_answer(result, links=links)
     sources = [_chunk_to_source(chunk) for chunk in result.chunks]
     confidence = max(0.5, min(0.95, primary.score))
     return MainChatResponse(
@@ -93,10 +106,25 @@ def build_main_fallback_response(
     reason: str,
     *,
     reason_code: str = "GENERIC",
+    related_chunks: list[MainChunkRecord] | None = None,
 ) -> MainChatResponse:
+    if reason_code == "LOW_SIMILARITY":
+        answer = (
+            "질문을 조금 더 구체적으로 다시 입력해 주세요. "
+            "예: 장학금 종류, 신청 기간, 대상, 학기 등을 함께 적어주시면 더 정확히 안내할 수 있습니다."
+        )
+    elif reason_code == "NO_CHUNKS":
+        answer = (
+            "관련 공지를 찾지 못했습니다. "
+            "찾고 싶은 주제(예: 장학금/수강신청/휴복학)와 기간을 포함해 다시 질문해 주세요."
+        )
+    elif reason_code in {"TOPIC_MISMATCH_NO_DATA", "GENERIC"} and "관련 데이터가 준비 중" in reason:
+        answer = _build_data_preparing_answer(keyword, related_chunks or [])
+    else:
+        answer = f"{reason} 공식 공지나 학사 안내 데이터가 적재된 뒤 다시 확인해 주세요."
     return MainChatResponse(
         intent="MAIN_GENERAL",
-        answer=f"{reason} 공식 공지나 학사 안내 데이터가 적재된 뒤 다시 확인해 주세요.",
+        answer=answer,
         sources=[],
         confidence=0.35,
         fallbackUsed=True,
@@ -107,17 +135,22 @@ def build_main_fallback_response(
     )
 
 
-def _compose_answer(result: MainSearchResult) -> str:
-    links = select_source_links(result.chunks)
+def _compose_answer(result: MainSearchResult, *, links: list[_SourceLink] | None = None) -> str:
+    links = links if links is not None else select_source_links(result.chunks)
     descriptions = [_default_link_description(link) for link in links]
     return _format_link_guide_answer(result.keyword, links, descriptions)
 
 
-def _generate_answer(result: MainSearchResult, llm_client: LLMClient | None) -> str:
+def _generate_answer(
+    result: MainSearchResult,
+    llm_client: LLMClient | None,
+    *,
+    links: list[_SourceLink] | None = None,
+) -> str:
     if llm_client is None:
-        return _compose_answer(result)
+        return _compose_answer(result, links=links)
 
-    links = select_source_links(result.chunks)
+    links = links if links is not None else select_source_links(result.chunks)
     if not links:
         return _format_link_guide_answer(result.keyword, links, [])
 
@@ -426,3 +459,123 @@ def _has_lost_item_evidence(chunks: list[MainChunkRecord]) -> bool:
         if any(term in combined for term in MAIN_LOST_ITEM_EVIDENCE_TERMS):
             return True
     return False
+
+
+def _fails_strict_match_filter(keyword: str, links: list[_SourceLink]) -> bool:
+    if not links:
+        return False
+    if _is_scholarship_query(keyword):
+        top_links = links[:STRICT_MATCH_CHECK_TOP_N]
+        return not any(_is_scholarship_link_match(link) for link in top_links)
+    return False
+
+
+def _is_scholarship_query(keyword: str) -> bool:
+    normalized = (keyword or "").lower()
+    return any(term in normalized for term in SCHOLARSHIP_ANCHOR_TERMS)
+
+
+def _is_scholarship_link_match(link: _SourceLink) -> bool:
+    title = (link.title or "").lower()
+    category = (link.category or "").lower()
+    if any(term in category for term in SCHOLARSHIP_CATEGORY_TERMS):
+        return True
+    return any(term in title for term in SCHOLARSHIP_TITLE_TERMS)
+
+
+def _build_data_preparing_answer(keyword: str, chunks: list[MainChunkRecord]) -> str:
+    query_focus = _summarize_query_focus(keyword)
+    related = _top_related_references(chunks, limit=2)
+    if not related:
+        return (
+            "데이터 준비중입니다. "
+            f'"{query_focus}"와 직접 일치하는 공지를 아직 찾지 못했습니다. '
+            "관련 데이터를 추가 수집해 안내드리겠습니다."
+        )
+
+    lines = [
+        "데이터 준비중입니다.",
+        f'"{query_focus}"에 대해 직접 일치하는 공지는 아직 확인되지 않았습니다.',
+        "대신 참고하기 좋은 관련 공지를 먼저 추천드립니다.",
+    ]
+    for index, (title, url) in enumerate(related, start=1):
+        lines.append(f"{index}. {title}")
+        if url:
+            lines.append(f"   {url}")
+    lines.append(f'"{query_focus}" 관련 공지를 추가 수집해 업데이트해드리겠습니다.')
+    return "\n".join(lines)
+
+
+def _summarize_query_focus(keyword: str) -> str:
+    raw_terms = re.findall(r"[0-9A-Za-z가-힣]+", (keyword or "").lower())
+    stop_terms = {
+        "관련",
+        "대해",
+        "알고싶은데",
+        "알고싶어",
+        "알고",
+        "싶어",
+        "싶은데",
+        "찾아보고",
+        "찾아보고싶음",
+        "찾아보고싶어요",
+        "찾아보고",
+        "싶습니다",
+        "알려줘",
+        "공지",
+    }
+    compact: list[str] = []
+    for term in raw_terms:
+        term = _strip_korean_particle(term)
+        if len(term) < 2 or term in stop_terms:
+            continue
+        if term not in compact:
+            compact.append(term)
+    if compact:
+        return " ".join(compact[:3])
+    return (keyword or "요청 주제").strip()
+
+
+def _strip_korean_particle(term: str) -> str:
+    particles = (
+        "으로",
+        "에서",
+        "까지",
+        "부터",
+        "에게",
+        "한테",
+        "처럼",
+        "보다",
+        "에서",
+        "으로",
+        "과",
+        "와",
+        "의",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "에",
+        "도",
+        "로",
+    )
+    for particle in particles:
+        if len(term) > len(particle) + 1 and term.endswith(particle):
+            return term[: -len(particle)]
+    return term
+
+
+def _top_related_references(chunks: list[MainChunkRecord], limit: int = 2) -> list[tuple[str, str | None]]:
+    refs: list[tuple[str, str | None]] = []
+    seen_titles: set[str] = set()
+    for chunk in chunks:
+        title = (chunk.title or "").strip()
+        if not title or title in seen_titles:
+            continue
+        refs.append((title, chunk.url))
+        seen_titles.add(title)
+        if len(refs) >= limit:
+            break
+    return refs
