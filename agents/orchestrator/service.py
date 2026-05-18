@@ -623,8 +623,8 @@ def stream_orchestrator_chat(
             embedding_provider=main_embedding_provider,
             llm_client=None,
         )
-        precheck_converted = _maybe_convert_main_fallback_to_data_preparing(precheck_response)
-        if precheck_converted.targetAgent != "MAIN":
+        if getattr(precheck_response, "fallbackUsed", False):
+            precheck_converted = _maybe_convert_main_fallback_to_data_preparing(precheck_response)
             yield _sse_event({'type': 'done', **precheck_converted.model_dump()})
             return
 

@@ -312,7 +312,7 @@ def test_main_agent_keeps_three_links_when_mixed_threshold_is_not_met() -> None:
     assert "3. 공지 3" in response.answer
 
 
-def test_main_agent_keeps_three_links_when_boundary_is_ambiguous_even_if_top1_is_high() -> None:
+def test_main_agent_falls_back_when_ambiguous_boundary_results_are_not_scholarship_related() -> None:
     llm_client = RecordingLLMClient(
         "\n".join(
             [
@@ -370,9 +370,11 @@ def test_main_agent_keeps_three_links_when_boundary_is_ambiguous_even_if_top1_is
         llm_client=llm_client,
     )
 
+    assert response.fallbackUsed is True
+    assert response.answer.startswith("데이터 준비중입니다.")
+    assert "대신 참고하기 좋은 관련 공지를 먼저 추천드립니다." in response.answer
     assert "1. 공지 A" in response.answer
-    assert "2. 공지 B" in response.answer
-    assert "3. 공지 C" in response.answer
+    assert "https://example.edu/notice-a" in response.answer
 
 
 def test_main_agent_template_answer_omits_empty_urls_from_reference_list() -> None:
