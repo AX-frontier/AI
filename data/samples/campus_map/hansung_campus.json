@@ -1,0 +1,3286 @@
+{
+  "campusId": "hansung",
+  "name": "한성대학교",
+  "canvas": {
+    "width": 840,
+    "height": 1040
+  },
+  "geoBounds": {
+    "minLat": 37.5811,
+    "maxLat": 37.584,
+    "minLng": 127.0088,
+    "maxLng": 127.0115
+  },
+  "places": [
+    {
+      "id": "sangsang-cube",
+      "name": "상상큐브",
+      "aliases": [
+        "상상큐브",
+        "큐브",
+        "imagination cube"
+      ],
+      "category": "building",
+      "center": {
+        "x": 208,
+        "y": 42,
+        "lat": 37.583882884615385,
+        "lng": 127.00946857142857
+      },
+      "polygon": [
+        {
+          "x": 145,
+          "y": 18
+        },
+        {
+          "x": 275,
+          "y": 20
+        },
+        {
+          "x": 285,
+          "y": 78
+        },
+        {
+          "x": 155,
+          "y": 82
+        }
+      ],
+      "representativeFacilities": [
+        "창의/메이커 공간",
+        "상상큐브"
+      ],
+      "height": 14,
+      "floorCount": 3,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 14,
+      "floor_count": 3,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.67,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "exploration-hall",
+      "name": "탐구관",
+      "aliases": [
+        "탐구관",
+        "탐구",
+        "exploration hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 158,
+        "y": 142,
+        "lat": 37.583604038461544,
+        "lng": 127.00930785714286
+      },
+      "polygon": [
+        {
+          "x": 72,
+          "y": 104
+        },
+        {
+          "x": 270,
+          "y": 104
+        },
+        {
+          "x": 270,
+          "y": 174
+        },
+        {
+          "x": 72,
+          "y": 174
+        }
+      ],
+      "representativeFacilities": [
+        "강의실",
+        "실습실",
+        "매점"
+      ],
+      "height": 24,
+      "floorCount": 5,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 24,
+      "floor_count": 5,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.8,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "haksong-hall",
+      "name": "학송관",
+      "aliases": [
+        "학송관",
+        "학송",
+        "haksong hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 372,
+        "y": 185,
+        "lat": 37.58348413461539,
+        "lng": 127.00999571428571
+      },
+      "polygon": [
+        {
+          "x": 318,
+          "y": 118
+        },
+        {
+          "x": 426,
+          "y": 132
+        },
+        {
+          "x": 426,
+          "y": 250
+        },
+        {
+          "x": 320,
+          "y": 250
+        }
+      ],
+      "representativeFacilities": [
+        "대학원교학팀",
+        "강의실",
+        "세미나실"
+      ],
+      "height": 26,
+      "floorCount": 6,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 26,
+      "floor_count": 6,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.33,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "rotc",
+      "name": "학군단",
+      "aliases": [
+        "학군단",
+        "ROTC"
+      ],
+      "category": "building",
+      "center": {
+        "x": 74,
+        "y": 242,
+        "lat": 37.5833251923077,
+        "lng": 127.00903785714286
+      },
+      "polygon": [
+        {
+          "x": 30,
+          "y": 170
+        },
+        {
+          "x": 98,
+          "y": 186
+        },
+        {
+          "x": 108,
+          "y": 300
+        },
+        {
+          "x": 45,
+          "y": 318
+        }
+      ],
+      "representativeFacilities": [
+        "학군단"
+      ],
+      "height": 13,
+      "floorCount": 3,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 13,
+      "floor_count": 3,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.33,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "truth-hall",
+      "name": "진리관",
+      "aliases": [
+        "진리관",
+        "진리",
+        "veritas hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 319,
+        "y": 285,
+        "lat": 37.58320528846154,
+        "lng": 127.00982535714286
+      },
+      "polygon": [
+        {
+          "x": 190,
+          "y": 252
+        },
+        {
+          "x": 448,
+          "y": 252
+        },
+        {
+          "x": 448,
+          "y": 318
+        },
+        {
+          "x": 190,
+          "y": 318
+        }
+      ],
+      "representativeFacilities": [
+        "강의실",
+        "학생지원 시설",
+        "총학생회"
+      ],
+      "height": 20,
+      "floorCount": 4,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 20,
+      "floor_count": 4,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 5.0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "woochon-hall",
+      "name": "우촌관",
+      "aliases": [
+        "우촌관",
+        "우촌",
+        "대학본부",
+        "우편취급국",
+        "woochon hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 630,
+        "y": 320,
+        "lat": 37.58310769230769,
+        "lng": 127.010825
+      },
+      "polygon": [
+        {
+          "x": 485,
+          "y": 282
+        },
+        {
+          "x": 778,
+          "y": 282
+        },
+        {
+          "x": 778,
+          "y": 363
+        },
+        {
+          "x": 485,
+          "y": 363
+        }
+      ],
+      "representativeFacilities": [
+        "대학본부",
+        "우편취급국",
+        "행정 공간"
+      ],
+      "height": 24,
+      "floorCount": 5,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 24,
+      "floor_count": 5,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.8,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "sangsang-hall",
+      "name": "상상관",
+      "aliases": [
+        "상상관",
+        "상상",
+        "sangsang",
+        "상상홀",
+        "imagination hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 500,
+        "y": 422,
+        "lat": 37.58282326923077,
+        "lng": 127.01040714285713
+      },
+      "polygon": [
+        {
+          "x": 402,
+          "y": 352
+        },
+        {
+          "x": 588,
+          "y": 352
+        },
+        {
+          "x": 590,
+          "y": 490
+        },
+        {
+          "x": 405,
+          "y": 490
+        }
+      ],
+      "representativeFacilities": [
+        "건강관리실",
+        "행정부서",
+        "강의실"
+      ],
+      "height": 45,
+      "floorCount": 12,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 45,
+      "floor_count": 12,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 3.75,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "future-hall",
+      "name": "미래관",
+      "aliases": [
+        "미래관",
+        "미래",
+        "future hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 656,
+        "y": 480,
+        "lat": 37.58266153846154,
+        "lng": 127.01090857142857
+      },
+      "polygon": [
+        {
+          "x": 585,
+          "y": 430
+        },
+        {
+          "x": 785,
+          "y": 430
+        },
+        {
+          "x": 785,
+          "y": 530
+        },
+        {
+          "x": 585,
+          "y": 530
+        }
+      ],
+      "representativeFacilities": [
+        "학술정보관",
+        "러닝커먼스",
+        "정보화팀"
+      ],
+      "height": 30,
+      "floorCount": 7,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 30,
+      "floor_count": 7,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.29,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "research-hall",
+      "name": "연구관",
+      "aliases": [
+        "연구관",
+        "연구동",
+        "research hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 302,
+        "y": 535,
+        "lat": 37.582508173076924,
+        "lng": 127.00977071428571
+      },
+      "polygon": [
+        {
+          "x": 168,
+          "y": 505
+        },
+        {
+          "x": 438,
+          "y": 505
+        },
+        {
+          "x": 438,
+          "y": 580
+        },
+        {
+          "x": 168,
+          "y": 580
+        }
+      ],
+      "representativeFacilities": [
+        "전시실",
+        "교수연구실",
+        "옥상정원"
+      ],
+      "height": 20,
+      "floorCount": 5,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 20,
+      "floor_count": 5,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "jiseon-hall",
+      "name": "지선관",
+      "aliases": [
+        "지선관",
+        "지선",
+        "virtue hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 288,
+        "y": 660,
+        "lat": 37.58215961538462,
+        "lng": 127.00972571428571
+      },
+      "polygon": [
+        {
+          "x": 175,
+          "y": 626
+        },
+        {
+          "x": 400,
+          "y": 626
+        },
+        {
+          "x": 400,
+          "y": 690
+        },
+        {
+          "x": 175,
+          "y": 690
+        }
+      ],
+      "representativeFacilities": [
+        "실기실",
+        "IT공과대학",
+        "학과 공간"
+      ],
+      "height": 20,
+      "floorCount": 5,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 20,
+      "floor_count": 5,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "engineering-a",
+      "name": "공학관A동",
+      "aliases": [
+        "공학관A동",
+        "공학관A",
+        "공학관(A)",
+        "제1공학관",
+        "1공학관",
+        "공학관",
+        "공대",
+        "engineering bldg a"
+      ],
+      "category": "building",
+      "center": {
+        "x": 282,
+        "y": 755,
+        "lat": 37.58189471153846,
+        "lng": 127.00970642857142
+      },
+      "polygon": [
+        {
+          "x": 165,
+          "y": 724
+        },
+        {
+          "x": 410,
+          "y": 724
+        },
+        {
+          "x": 410,
+          "y": 792
+        },
+        {
+          "x": 165,
+          "y": 792
+        }
+      ],
+      "representativeFacilities": [
+        "상상파크 플러스",
+        "공학 실습실",
+        "강의실"
+      ],
+      "height": 22,
+      "floorCount": 5,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 22,
+      "floor_count": 5,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.4,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "engineering-b",
+      "name": "공학관B동",
+      "aliases": [
+        "공학관B동",
+        "공학관B",
+        "공학관(B)",
+        "제2공학관",
+        "2공학관",
+        "공학관",
+        "공대",
+        "engineering bldg b"
+      ],
+      "category": "building",
+      "center": {
+        "x": 140,
+        "y": 866,
+        "lat": 37.58158519230769,
+        "lng": 127.00925
+      },
+      "polygon": [
+        {
+          "x": 96,
+          "y": 780
+        },
+        {
+          "x": 165,
+          "y": 780
+        },
+        {
+          "x": 165,
+          "y": 954
+        },
+        {
+          "x": 96,
+          "y": 954
+        }
+      ],
+      "representativeFacilities": [
+        "공학 실습실",
+        "세미나실",
+        "연구실"
+      ],
+      "height": 22,
+      "floorCount": 5,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 22,
+      "floor_count": 5,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.4,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "sangsang-village",
+      "name": "상상빌리지",
+      "aliases": [
+        "상상빌리지",
+        "기숙사",
+        "imagination village"
+      ],
+      "category": "building",
+      "center": {
+        "x": 395,
+        "y": 860,
+        "lat": 37.581601923076924,
+        "lng": 127.01006964285713
+      },
+      "polygon": [
+        {
+          "x": 330,
+          "y": 788
+        },
+        {
+          "x": 430,
+          "y": 788
+        },
+        {
+          "x": 430,
+          "y": 942
+        },
+        {
+          "x": 330,
+          "y": 942
+        }
+      ],
+      "representativeFacilities": [
+        "기숙사",
+        "라켓볼장",
+        "휴게라운지"
+      ],
+      "height": 38,
+      "floorCount": 10,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 38,
+      "floor_count": 10,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 3.8,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "creativity-hall",
+      "name": "창의관",
+      "aliases": [
+        "창의관",
+        "창의",
+        "학생식당",
+        "학식",
+        "creativity hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 642,
+        "y": 645,
+        "lat": 37.58220144230769,
+        "lng": 127.01086357142857
+      },
+      "polygon": [
+        {
+          "x": 565,
+          "y": 600
+        },
+        {
+          "x": 715,
+          "y": 600
+        },
+        {
+          "x": 715,
+          "y": 705
+        },
+        {
+          "x": 565,
+          "y": 705
+        }
+      ],
+      "representativeFacilities": [
+        "학생식당",
+        "매점",
+        "소강당"
+      ],
+      "height": 22,
+      "floorCount": 5,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 22,
+      "floor_count": 5,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.4,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "insung-hall",
+      "name": "인성관",
+      "aliases": [
+        "인성관",
+        "인성",
+        "동아리관",
+        "humanities hall"
+      ],
+      "category": "building",
+      "center": {
+        "x": 650,
+        "y": 720,
+        "lat": 37.58199230769231,
+        "lng": 127.01088928571428
+      },
+      "polygon": [
+        {
+          "x": 585,
+          "y": 695
+        },
+        {
+          "x": 735,
+          "y": 695
+        },
+        {
+          "x": 735,
+          "y": 790
+        },
+        {
+          "x": 585,
+          "y": 790
+        }
+      ],
+      "representativeFacilities": [
+        "동아리방",
+        "학생 활동 공간",
+        "학생회 관련 공간"
+      ],
+      "height": 22,
+      "floorCount": 5,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 22,
+      "floor_count": 5,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.4,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "naksan-hall",
+      "name": "낙산관",
+      "aliases": [
+        "낙산관",
+        "낙산",
+        "체육관",
+        "gym"
+      ],
+      "category": "building",
+      "center": {
+        "x": 795,
+        "y": 650,
+        "lat": 37.5821875,
+        "lng": 127.01135535714286
+      },
+      "polygon": [
+        {
+          "x": 735,
+          "y": 565
+        },
+        {
+          "x": 835,
+          "y": 565
+        },
+        {
+          "x": 835,
+          "y": 760
+        },
+        {
+          "x": 735,
+          "y": 760
+        }
+      ],
+      "representativeFacilities": [
+        "대강당",
+        "체육관",
+        "무용학과 실습실"
+      ],
+      "height": 28,
+      "floorCount": 6,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 28,
+      "floor_count": 6,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 4.67,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "main-gate",
+      "name": "정문(안내실)",
+      "aliases": [
+        "정문",
+        "정문안내실",
+        "안내실",
+        "메인게이트",
+        "main gate"
+      ],
+      "category": "gate",
+      "center": {
+        "x": 820,
+        "y": 500,
+        "lat": 37.58260576923077,
+        "lng": 127.01143571428571
+      },
+      "polygon": [
+        {
+          "x": 790,
+          "y": 472
+        },
+        {
+          "x": 838,
+          "y": 472
+        },
+        {
+          "x": 838,
+          "y": 528
+        },
+        {
+          "x": 790,
+          "y": 528
+        }
+      ],
+      "representativeFacilities": [
+        "정문 안내실",
+        "차량/보행 진입"
+      ],
+      "height": 6,
+      "floorCount": 1,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 6,
+      "floor_count": 1,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 6.0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "middle-gate",
+      "name": "중문",
+      "aliases": [
+        "중문",
+        "inner gate"
+      ],
+      "category": "gate",
+      "center": {
+        "x": 650,
+        "y": 250,
+        "lat": 37.583302884615385,
+        "lng": 127.01088928571428
+      },
+      "polygon": [
+        {
+          "x": 620,
+          "y": 225
+        },
+        {
+          "x": 680,
+          "y": 225
+        },
+        {
+          "x": 680,
+          "y": 265
+        },
+        {
+          "x": 620,
+          "y": 265
+        }
+      ],
+      "representativeFacilities": [
+        "중문 진입"
+      ],
+      "height": 6,
+      "floorCount": 1,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 6,
+      "floor_count": 1,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 6.0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "south-gate",
+      "name": "남문",
+      "aliases": [
+        "남문",
+        "south gate"
+      ],
+      "category": "gate",
+      "center": {
+        "x": 660,
+        "y": 990,
+        "lat": 37.58123942307692,
+        "lng": 127.01092142857142
+      },
+      "polygon": [
+        {
+          "x": 630,
+          "y": 960
+        },
+        {
+          "x": 690,
+          "y": 960
+        },
+        {
+          "x": 690,
+          "y": 1000
+        },
+        {
+          "x": 630,
+          "y": 1000
+        }
+      ],
+      "representativeFacilities": [
+        "남문 진입"
+      ],
+      "height": 6,
+      "floorCount": 1,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 6,
+      "floor_count": 1,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 6.0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "futsal-tennis",
+      "name": "풋살/테니스장",
+      "aliases": [
+        "풋살장",
+        "테니스장",
+        "풋살테니스장",
+        "풋살/테니스장"
+      ],
+      "category": "outdoor",
+      "center": {
+        "x": 295,
+        "y": 412,
+        "lat": 37.58285115384616,
+        "lng": 127.00974821428571
+      },
+      "polygon": [
+        {
+          "x": 170,
+          "y": 340
+        },
+        {
+          "x": 386,
+          "y": 340
+        },
+        {
+          "x": 386,
+          "y": 470
+        },
+        {
+          "x": 170,
+          "y": 470
+        }
+      ],
+      "representativeFacilities": [
+        "풋살장",
+        "테니스장"
+      ],
+      "height": 0,
+      "floorCount": 0,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 0,
+      "floor_count": 0,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "uigwajeong",
+      "name": "의화정",
+      "aliases": [
+        "의화정",
+        "정자"
+      ],
+      "category": "outdoor",
+      "center": {
+        "x": 515,
+        "y": 620,
+        "lat": 37.58227115384616,
+        "lng": 127.01045535714286
+      },
+      "polygon": [
+        {
+          "x": 492,
+          "y": 598
+        },
+        {
+          "x": 540,
+          "y": 598
+        },
+        {
+          "x": 540,
+          "y": 642
+        },
+        {
+          "x": 492,
+          "y": 642
+        }
+      ],
+      "representativeFacilities": [
+        "휴게 공간"
+      ],
+      "height": 0,
+      "floorCount": 0,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 0,
+      "floor_count": 0,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "sangsang-park-plus",
+      "name": "상상파크 플러스",
+      "aliases": [
+        "상상파크 플러스",
+        "상상파크플러스"
+      ],
+      "category": "outdoor",
+      "center": {
+        "x": 330,
+        "y": 710,
+        "lat": 37.582020192307695,
+        "lng": 127.00986071428571
+      },
+      "polygon": [
+        {
+          "x": 220,
+          "y": 690
+        },
+        {
+          "x": 445,
+          "y": 690
+        },
+        {
+          "x": 445,
+          "y": 725
+        },
+        {
+          "x": 220,
+          "y": 725
+        }
+      ],
+      "representativeFacilities": [
+        "창업/메이커 공간"
+      ],
+      "height": 0,
+      "floorCount": 0,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 0,
+      "floor_count": 0,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "naksan-park",
+      "name": "낙산공원",
+      "aliases": [
+        "낙산공원",
+        "공원"
+      ],
+      "category": "outdoor",
+      "center": {
+        "x": 535,
+        "y": 905,
+        "lat": 37.58147644230769,
+        "lng": 127.01051964285713
+      },
+      "polygon": [
+        {
+          "x": 455,
+          "y": 790
+        },
+        {
+          "x": 710,
+          "y": 798
+        },
+        {
+          "x": 700,
+          "y": 1000
+        },
+        {
+          "x": 470,
+          "y": 1010
+        },
+        {
+          "x": 405,
+          "y": 940
+        }
+      ],
+      "representativeFacilities": [
+        "낙산공원 산책로"
+      ],
+      "height": 0,
+      "floorCount": 0,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 0,
+      "floor_count": 0,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "library",
+      "name": "학술정보관",
+      "aliases": [
+        "학술정보관",
+        "도서관",
+        "중앙도서관",
+        "도서실",
+        "열람실",
+        "러닝커먼스"
+      ],
+      "category": "facility",
+      "center": {
+        "x": 656,
+        "y": 480,
+        "lat": 37.58266153846154,
+        "lng": 127.01090857142857
+      },
+      "polygon": [
+        {
+          "x": 610,
+          "y": 455
+        },
+        {
+          "x": 730,
+          "y": 455
+        },
+        {
+          "x": 730,
+          "y": 505
+        },
+        {
+          "x": 610,
+          "y": 505
+        }
+      ],
+      "representativeFacilities": [
+        "자료실",
+        "열람실",
+        "러닝커먼스"
+      ],
+      "height": 0,
+      "floorCount": 0,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 0,
+      "floor_count": 0,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    },
+    {
+      "id": "student-union",
+      "name": "학생회관",
+      "aliases": [
+        "학생회관",
+        "학생회간",
+        "학생관",
+        "동아리방",
+        "총학생회"
+      ],
+      "category": "facility",
+      "center": {
+        "x": 650,
+        "y": 720,
+        "lat": 37.58199230769231,
+        "lng": 127.01088928571428
+      },
+      "polygon": [
+        {
+          "x": 610,
+          "y": 705
+        },
+        {
+          "x": 705,
+          "y": 705
+        },
+        {
+          "x": 705,
+          "y": 745
+        },
+        {
+          "x": 610,
+          "y": 745
+        }
+      ],
+      "representativeFacilities": [
+        "동아리방",
+        "학생 활동 공간",
+        "학생회 관련 공간"
+      ],
+      "height": 0,
+      "floorCount": 0,
+      "minHeight": 0,
+      "entranceLevel": 1,
+      "height_m": 0,
+      "floor_count": 0,
+      "min_height_m": 0,
+      "entrance_level": 1,
+      "floor_height_m": 0,
+      "dataQuality": {
+        "source": "manual_seed",
+        "accuracy": "mock",
+        "verified": false
+      }
+    }
+  ],
+  "entrances": [
+    {
+      "id": "sangsang-cube-main",
+      "placeId": "sangsang-cube",
+      "name": "대표 출입구",
+      "x": 208,
+      "y": 42,
+      "accessible": true,
+      "nodeId": "n-sangsang-cube",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "exploration-hall-main",
+      "placeId": "exploration-hall",
+      "name": "대표 출입구",
+      "x": 158,
+      "y": 142,
+      "accessible": true,
+      "nodeId": "n-exploration-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "haksong-hall-main",
+      "placeId": "haksong-hall",
+      "name": "대표 출입구",
+      "x": 372,
+      "y": 185,
+      "accessible": true,
+      "nodeId": "n-haksong-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "rotc-main",
+      "placeId": "rotc",
+      "name": "대표 출입구",
+      "x": 74,
+      "y": 242,
+      "accessible": true,
+      "nodeId": "n-rotc",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "truth-hall-main",
+      "placeId": "truth-hall",
+      "name": "대표 출입구",
+      "x": 319,
+      "y": 285,
+      "accessible": true,
+      "nodeId": "n-truth-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "woochon-hall-main",
+      "placeId": "woochon-hall",
+      "name": "대표 출입구",
+      "x": 630,
+      "y": 320,
+      "accessible": true,
+      "nodeId": "n-woochon-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "sangsang-hall-main",
+      "placeId": "sangsang-hall",
+      "name": "대표 출입구",
+      "x": 500,
+      "y": 422,
+      "accessible": true,
+      "nodeId": "n-sangsang-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "future-hall-main",
+      "placeId": "future-hall",
+      "name": "대표 출입구",
+      "x": 656,
+      "y": 480,
+      "accessible": true,
+      "nodeId": "n-future-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "research-hall-main",
+      "placeId": "research-hall",
+      "name": "대표 출입구",
+      "x": 302,
+      "y": 535,
+      "accessible": true,
+      "nodeId": "n-research-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "jiseon-hall-main",
+      "placeId": "jiseon-hall",
+      "name": "대표 출입구",
+      "x": 288,
+      "y": 660,
+      "accessible": true,
+      "nodeId": "n-jiseon-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "engineering-a-main",
+      "placeId": "engineering-a",
+      "name": "대표 출입구",
+      "x": 282,
+      "y": 755,
+      "accessible": true,
+      "nodeId": "n-engineering-a",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "engineering-b-main",
+      "placeId": "engineering-b",
+      "name": "대표 출입구",
+      "x": 140,
+      "y": 866,
+      "accessible": true,
+      "nodeId": "n-engineering-b",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "sangsang-village-main",
+      "placeId": "sangsang-village",
+      "name": "대표 출입구",
+      "x": 395,
+      "y": 860,
+      "accessible": true,
+      "nodeId": "n-sangsang-village",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "creativity-hall-main",
+      "placeId": "creativity-hall",
+      "name": "대표 출입구",
+      "x": 642,
+      "y": 645,
+      "accessible": true,
+      "nodeId": "n-creativity-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "insung-hall-main",
+      "placeId": "insung-hall",
+      "name": "대표 출입구",
+      "x": 650,
+      "y": 720,
+      "accessible": true,
+      "nodeId": "n-insung-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "naksan-hall-main",
+      "placeId": "naksan-hall",
+      "name": "대표 출입구",
+      "x": 795,
+      "y": 650,
+      "accessible": true,
+      "nodeId": "n-naksan-hall",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "main-gate-main",
+      "placeId": "main-gate",
+      "name": "진입 지점",
+      "x": 820,
+      "y": 500,
+      "accessible": true,
+      "nodeId": "n-main-gate",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "middle-gate-main",
+      "placeId": "middle-gate",
+      "name": "진입 지점",
+      "x": 650,
+      "y": 250,
+      "accessible": true,
+      "nodeId": "n-middle-gate",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "south-gate-main",
+      "placeId": "south-gate",
+      "name": "진입 지점",
+      "x": 660,
+      "y": 990,
+      "accessible": true,
+      "nodeId": "n-south-gate",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "futsal-tennis-main",
+      "placeId": "futsal-tennis",
+      "name": "시설 위치",
+      "x": 295,
+      "y": 412,
+      "accessible": true,
+      "nodeId": "n-futsal-tennis",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "uigwajeong-main",
+      "placeId": "uigwajeong",
+      "name": "시설 위치",
+      "x": 515,
+      "y": 620,
+      "accessible": true,
+      "nodeId": "n-uigwajeong",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "sangsang-park-plus-main",
+      "placeId": "sangsang-park-plus",
+      "name": "시설 위치",
+      "x": 330,
+      "y": 710,
+      "accessible": true,
+      "nodeId": "n-sangsang-park-plus",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "naksan-park-main",
+      "placeId": "naksan-park",
+      "name": "시설 위치",
+      "x": 535,
+      "y": 905,
+      "accessible": true,
+      "nodeId": "n-naksan-park",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "library-main",
+      "placeId": "library",
+      "name": "시설 위치",
+      "x": 656,
+      "y": 480,
+      "accessible": true,
+      "nodeId": "n-library",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    },
+    {
+      "id": "student-union-main",
+      "placeId": "student-union",
+      "name": "시설 위치",
+      "x": 650,
+      "y": 720,
+      "accessible": true,
+      "nodeId": "n-student-union",
+      "description": "한성대학교 공식 캠퍼스 안내도 기반 MVP 좌표입니다."
+    }
+  ],
+  "pathNodes": [
+    {
+      "id": "n-sangsang-cube",
+      "name": "상상큐브",
+      "x": 208,
+      "y": 42,
+      "lat": 37.583882884615385,
+      "lng": 127.00946857142857,
+      "building": "sangsang-cube",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-exploration-hall",
+      "name": "탐구관",
+      "x": 158,
+      "y": 142,
+      "lat": 37.583604038461544,
+      "lng": 127.00930785714286,
+      "building": "exploration-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-haksong-hall",
+      "name": "학송관",
+      "x": 372,
+      "y": 185,
+      "lat": 37.58348413461539,
+      "lng": 127.00999571428571,
+      "building": "haksong-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-rotc",
+      "name": "학군단",
+      "x": 74,
+      "y": 242,
+      "lat": 37.5833251923077,
+      "lng": 127.00903785714286,
+      "building": "rotc",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-truth-hall",
+      "name": "진리관",
+      "x": 319,
+      "y": 285,
+      "lat": 37.58320528846154,
+      "lng": 127.00982535714286,
+      "building": "truth-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-woochon-hall",
+      "name": "우촌관",
+      "x": 630,
+      "y": 320,
+      "lat": 37.58310769230769,
+      "lng": 127.010825,
+      "building": "woochon-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-sangsang-hall",
+      "name": "상상관",
+      "x": 500,
+      "y": 422,
+      "lat": 37.58282326923077,
+      "lng": 127.01040714285713,
+      "building": "sangsang-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-future-hall",
+      "name": "미래관",
+      "x": 656,
+      "y": 480,
+      "lat": 37.58266153846154,
+      "lng": 127.01090857142857,
+      "building": "future-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-research-hall",
+      "name": "연구관",
+      "x": 302,
+      "y": 535,
+      "lat": 37.582508173076924,
+      "lng": 127.00977071428571,
+      "building": "research-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-jiseon-hall",
+      "name": "지선관",
+      "x": 288,
+      "y": 660,
+      "lat": 37.58215961538462,
+      "lng": 127.00972571428571,
+      "building": "jiseon-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-engineering-a",
+      "name": "공학관A동",
+      "x": 282,
+      "y": 755,
+      "lat": 37.58189471153846,
+      "lng": 127.00970642857142,
+      "building": "engineering-a",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-engineering-b",
+      "name": "공학관B동",
+      "x": 140,
+      "y": 866,
+      "lat": 37.58158519230769,
+      "lng": 127.00925,
+      "building": "engineering-b",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-sangsang-village",
+      "name": "상상빌리지",
+      "x": 395,
+      "y": 860,
+      "lat": 37.581601923076924,
+      "lng": 127.01006964285713,
+      "building": "sangsang-village",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-creativity-hall",
+      "name": "창의관",
+      "x": 642,
+      "y": 645,
+      "lat": 37.58220144230769,
+      "lng": 127.01086357142857,
+      "building": "creativity-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-insung-hall",
+      "name": "인성관",
+      "x": 650,
+      "y": 720,
+      "lat": 37.58199230769231,
+      "lng": 127.01088928571428,
+      "building": "insung-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-naksan-hall",
+      "name": "낙산관",
+      "x": 795,
+      "y": 650,
+      "lat": 37.5821875,
+      "lng": 127.01135535714286,
+      "building": "naksan-hall",
+      "floor": 1,
+      "z": 0,
+      "type": "entrance"
+    },
+    {
+      "id": "n-main-gate",
+      "name": "정문(안내실)",
+      "x": 820,
+      "y": 500,
+      "lat": 37.58260576923077,
+      "lng": 127.01143571428571,
+      "building": null,
+      "floor": 1,
+      "z": 0,
+      "type": "gate"
+    },
+    {
+      "id": "n-middle-gate",
+      "name": "중문",
+      "x": 650,
+      "y": 250,
+      "lat": 37.583302884615385,
+      "lng": 127.01088928571428,
+      "building": null,
+      "floor": 1,
+      "z": 0,
+      "type": "gate"
+    },
+    {
+      "id": "n-south-gate",
+      "name": "남문",
+      "x": 660,
+      "y": 990,
+      "lat": 37.58123942307692,
+      "lng": 127.01092142857142,
+      "building": null,
+      "floor": 1,
+      "z": 0,
+      "type": "gate"
+    },
+    {
+      "id": "n-futsal-tennis",
+      "name": "풋살/테니스장",
+      "x": 295,
+      "y": 412,
+      "lat": 37.58285115384616,
+      "lng": 127.00974821428571,
+      "building": null,
+      "floor": null,
+      "z": 0,
+      "type": "poi"
+    },
+    {
+      "id": "n-uigwajeong",
+      "name": "의화정",
+      "x": 515,
+      "y": 620,
+      "lat": 37.58227115384616,
+      "lng": 127.01045535714286,
+      "building": null,
+      "floor": null,
+      "z": 0,
+      "type": "poi"
+    },
+    {
+      "id": "n-sangsang-park-plus",
+      "name": "상상파크 플러스",
+      "x": 330,
+      "y": 710,
+      "lat": 37.582020192307695,
+      "lng": 127.00986071428571,
+      "building": null,
+      "floor": null,
+      "z": 0,
+      "type": "poi"
+    },
+    {
+      "id": "n-naksan-park",
+      "name": "낙산공원",
+      "x": 535,
+      "y": 905,
+      "lat": 37.58147644230769,
+      "lng": 127.01051964285713,
+      "building": null,
+      "floor": null,
+      "z": 0,
+      "type": "poi"
+    },
+    {
+      "id": "n-library",
+      "name": "학술정보관",
+      "x": 656,
+      "y": 480,
+      "lat": 37.58266153846154,
+      "lng": 127.01090857142857,
+      "building": "library",
+      "floor": 1,
+      "z": 0,
+      "type": "poi"
+    },
+    {
+      "id": "n-student-union",
+      "name": "학생회관",
+      "x": 650,
+      "y": 720,
+      "lat": 37.58199230769231,
+      "lng": 127.01088928571428,
+      "building": "student-union",
+      "floor": 1,
+      "z": 0,
+      "type": "poi"
+    },
+    {
+      "id": "n-north-west",
+      "name": "north-west",
+      "x": 145,
+      "y": 255,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-central-west",
+      "name": "central-west",
+      "x": 170,
+      "y": 500,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-central",
+      "name": "central",
+      "x": 430,
+      "y": 500,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-sangsang-south",
+      "name": "sangsang-south",
+      "x": 470,
+      "y": 530,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-main-spine",
+      "name": "maispine",
+      "x": 700,
+      "y": 535,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-south-spine",
+      "name": "south-spine",
+      "x": 600,
+      "y": 790,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-engineering-court",
+      "name": "engineering-court",
+      "x": 210,
+      "y": 735,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-village-stairs",
+      "name": "village-stairs",
+      "x": 285,
+      "y": 850,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-park-junction",
+      "name": "park-junction",
+      "x": 520,
+      "y": 805,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-west-slope",
+      "name": "west-slope",
+      "x": 85,
+      "y": 565,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    },
+    {
+      "id": "n-middle-spine",
+      "name": "middle-spine",
+      "x": 650,
+      "y": 355,
+      "type": "intersection",
+      "floor": null,
+      "z": 0
+    }
+  ],
+  "pathEdges": [
+    {
+      "id": "e-main-gate-main-spine",
+      "from": "n-main-gate",
+      "to": "n-main-spine",
+      "geometry": [
+        {
+          "x": 820,
+          "y": 500
+        },
+        {
+          "x": 700,
+          "y": 535
+        }
+      ],
+      "distance": 125,
+      "length_m": 125,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 125,
+        "accessible": 125,
+        "indoor_preferred": 135.0
+      }
+    },
+    {
+      "id": "e-main-spine-future-hall",
+      "from": "n-main-spine",
+      "to": "n-future-hall",
+      "geometry": [
+        {
+          "x": 700,
+          "y": 535
+        },
+        {
+          "x": 656,
+          "y": 480
+        }
+      ],
+      "distance": 70,
+      "length_m": 70,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 70,
+        "accessible": 70,
+        "indoor_preferred": 75.6
+      }
+    },
+    {
+      "id": "e-main-spine-creativity-hall",
+      "from": "n-main-spine",
+      "to": "n-creativity-hall",
+      "geometry": [
+        {
+          "x": 700,
+          "y": 535
+        },
+        {
+          "x": 642,
+          "y": 645
+        }
+      ],
+      "distance": 124,
+      "length_m": 124,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 124,
+        "accessible": 124,
+        "indoor_preferred": 133.92
+      }
+    },
+    {
+      "id": "e-main-spine-naksan-hall",
+      "from": "n-main-spine",
+      "to": "n-naksan-hall",
+      "geometry": [
+        {
+          "x": 700,
+          "y": 535
+        },
+        {
+          "x": 795,
+          "y": 650
+        }
+      ],
+      "distance": 149,
+      "length_m": 149,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 149,
+        "accessible": 149,
+        "indoor_preferred": 160.92
+      }
+    },
+    {
+      "id": "e-main-spine-south-spine",
+      "from": "n-main-spine",
+      "to": "n-south-spine",
+      "geometry": [
+        {
+          "x": 700,
+          "y": 535
+        },
+        {
+          "x": 600,
+          "y": 790
+        }
+      ],
+      "distance": 274,
+      "length_m": 274,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 274,
+        "accessible": 274,
+        "indoor_preferred": 295.92
+      }
+    },
+    {
+      "id": "e-south-spine-insung-hall",
+      "from": "n-south-spine",
+      "to": "n-insung-hall",
+      "geometry": [
+        {
+          "x": 600,
+          "y": 790
+        },
+        {
+          "x": 650,
+          "y": 720
+        }
+      ],
+      "distance": 86,
+      "length_m": 86,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 86,
+        "accessible": 86,
+        "indoor_preferred": 92.88
+      }
+    },
+    {
+      "id": "e-south-spine-park-junction",
+      "from": "n-south-spine",
+      "to": "n-park-junction",
+      "geometry": [
+        {
+          "x": 600,
+          "y": 790
+        },
+        {
+          "x": 520,
+          "y": 805
+        }
+      ],
+      "distance": 81,
+      "length_m": 81,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 81,
+        "accessible": 81,
+        "indoor_preferred": 87.48
+      }
+    },
+    {
+      "id": "e-park-junction-south-gate",
+      "from": "n-park-junction",
+      "to": "n-south-gate",
+      "geometry": [
+        {
+          "x": 520,
+          "y": 805
+        },
+        {
+          "x": 660,
+          "y": 990
+        }
+      ],
+      "distance": 232,
+      "length_m": 232,
+      "type": "ramp",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 232,
+        "accessible": 232,
+        "indoor_preferred": 250.56
+      }
+    },
+    {
+      "id": "e-park-junction-naksan-park",
+      "from": "n-park-junction",
+      "to": "n-naksan-park",
+      "geometry": [
+        {
+          "x": 520,
+          "y": 805
+        },
+        {
+          "x": 535,
+          "y": 905
+        }
+      ],
+      "distance": 101,
+      "length_m": 101,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 101,
+        "accessible": 101,
+        "indoor_preferred": 109.08
+      }
+    },
+    {
+      "id": "e-park-junction-sangsang-village",
+      "from": "n-park-junction",
+      "to": "n-sangsang-village",
+      "geometry": [
+        {
+          "x": 520,
+          "y": 805
+        },
+        {
+          "x": 395,
+          "y": 860
+        }
+      ],
+      "distance": 137,
+      "length_m": 137,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 137,
+        "accessible": 137,
+        "indoor_preferred": 147.96
+      }
+    },
+    {
+      "id": "e-middle-gate-middle-spine",
+      "from": "n-middle-gate",
+      "to": "n-middle-spine",
+      "geometry": [
+        {
+          "x": 650,
+          "y": 250
+        },
+        {
+          "x": 650,
+          "y": 355
+        }
+      ],
+      "distance": 105,
+      "length_m": 105,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 105,
+        "accessible": 105,
+        "indoor_preferred": 113.4
+      }
+    },
+    {
+      "id": "e-middle-spine-woochon-hall",
+      "from": "n-middle-spine",
+      "to": "n-woochon-hall",
+      "geometry": [
+        {
+          "x": 650,
+          "y": 355
+        },
+        {
+          "x": 630,
+          "y": 320
+        }
+      ],
+      "distance": 40,
+      "length_m": 40,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 40,
+        "accessible": 40,
+        "indoor_preferred": 43.2
+      }
+    },
+    {
+      "id": "e-middle-spine-future-hall",
+      "from": "n-middle-spine",
+      "to": "n-future-hall",
+      "geometry": [
+        {
+          "x": 650,
+          "y": 355
+        },
+        {
+          "x": 656,
+          "y": 480
+        }
+      ],
+      "distance": 125,
+      "length_m": 125,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 125,
+        "accessible": 125,
+        "indoor_preferred": 135.0
+      }
+    },
+    {
+      "id": "e-middle-spine-sangsang-hall",
+      "from": "n-middle-spine",
+      "to": "n-sangsang-hall",
+      "geometry": [
+        {
+          "x": 650,
+          "y": 355
+        },
+        {
+          "x": 500,
+          "y": 422
+        }
+      ],
+      "distance": 164,
+      "length_m": 164,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 164,
+        "accessible": 164,
+        "indoor_preferred": 177.12
+      }
+    },
+    {
+      "id": "e-woochon-hall-sangsang-hall",
+      "from": "n-woochon-hall",
+      "to": "n-sangsang-hall",
+      "geometry": [
+        {
+          "x": 630,
+          "y": 320
+        },
+        {
+          "x": 500,
+          "y": 422
+        }
+      ],
+      "distance": 165,
+      "length_m": 165,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 165,
+        "accessible": 165,
+        "indoor_preferred": 178.2
+      }
+    },
+    {
+      "id": "e-sangsang-hall-sangsang-south",
+      "from": "n-sangsang-hall",
+      "to": "n-sangsang-south",
+      "geometry": [
+        {
+          "x": 500,
+          "y": 422
+        },
+        {
+          "x": 470,
+          "y": 530
+        }
+      ],
+      "distance": 112,
+      "length_m": 112,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 112,
+        "accessible": 112,
+        "indoor_preferred": 120.96
+      }
+    },
+    {
+      "id": "e-sangsang-south-central",
+      "from": "n-sangsang-south",
+      "to": "n-central",
+      "geometry": [
+        {
+          "x": 470,
+          "y": 530
+        },
+        {
+          "x": 430,
+          "y": 500
+        }
+      ],
+      "distance": 50,
+      "length_m": 50,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 50,
+        "accessible": 50,
+        "indoor_preferred": 54.0
+      }
+    },
+    {
+      "id": "e-central-research-hall",
+      "from": "n-central",
+      "to": "n-research-hall",
+      "geometry": [
+        {
+          "x": 430,
+          "y": 500
+        },
+        {
+          "x": 302,
+          "y": 535
+        }
+      ],
+      "distance": 133,
+      "length_m": 133,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 133,
+        "accessible": 133,
+        "indoor_preferred": 143.64
+      }
+    },
+    {
+      "id": "e-central-uigwajeong",
+      "from": "n-central",
+      "to": "n-uigwajeong",
+      "geometry": [
+        {
+          "x": 430,
+          "y": 500
+        },
+        {
+          "x": 515,
+          "y": 620
+        }
+      ],
+      "distance": 147,
+      "length_m": 147,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 147,
+        "accessible": 147,
+        "indoor_preferred": 158.76
+      }
+    },
+    {
+      "id": "e-central-jiseon-hall",
+      "from": "n-central",
+      "to": "n-jiseon-hall",
+      "geometry": [
+        {
+          "x": 430,
+          "y": 500
+        },
+        {
+          "x": 288,
+          "y": 660
+        }
+      ],
+      "distance": 214,
+      "length_m": 214,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 214,
+        "accessible": 214,
+        "indoor_preferred": 231.12
+      }
+    },
+    {
+      "id": "e-central-engineering-court",
+      "from": "n-central",
+      "to": "n-engineering-court",
+      "geometry": [
+        {
+          "x": 430,
+          "y": 500
+        },
+        {
+          "x": 210,
+          "y": 735
+        }
+      ],
+      "distance": 322,
+      "length_m": 322,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 322,
+        "accessible": 322,
+        "indoor_preferred": 347.76
+      }
+    },
+    {
+      "id": "e-engineering-court-engineering-a",
+      "from": "n-engineering-court",
+      "to": "n-engineering-a",
+      "geometry": [
+        {
+          "x": 210,
+          "y": 735
+        },
+        {
+          "x": 282,
+          "y": 755
+        }
+      ],
+      "distance": 75,
+      "length_m": 75,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 75,
+        "accessible": 75,
+        "indoor_preferred": 81.0
+      }
+    },
+    {
+      "id": "e-engineering-court-engineering-b",
+      "from": "n-engineering-court",
+      "to": "n-engineering-b",
+      "geometry": [
+        {
+          "x": 210,
+          "y": 735
+        },
+        {
+          "x": 140,
+          "y": 866
+        }
+      ],
+      "distance": 149,
+      "length_m": 149,
+      "type": "stairs",
+      "accessible": false,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "stairs",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 149,
+        "accessible": null,
+        "indoor_preferred": 160.92
+      }
+    },
+    {
+      "id": "e-engineering-court-sangsang-park-plus",
+      "from": "n-engineering-court",
+      "to": "n-sangsang-park-plus",
+      "geometry": [
+        {
+          "x": 210,
+          "y": 735
+        },
+        {
+          "x": 330,
+          "y": 710
+        }
+      ],
+      "distance": 123,
+      "length_m": 123,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 123,
+        "accessible": 123,
+        "indoor_preferred": 132.84
+      }
+    },
+    {
+      "id": "e-engineering-a-sangsang-village",
+      "from": "n-engineering-a",
+      "to": "n-sangsang-village",
+      "geometry": [
+        {
+          "x": 282,
+          "y": 755
+        },
+        {
+          "x": 395,
+          "y": 860
+        }
+      ],
+      "distance": 154,
+      "length_m": 154,
+      "type": "stairs",
+      "accessible": false,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "stairs",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 154,
+        "accessible": null,
+        "indoor_preferred": 166.32
+      }
+    },
+    {
+      "id": "e-jiseon-hall-engineering-a",
+      "from": "n-jiseon-hall",
+      "to": "n-engineering-a",
+      "geometry": [
+        {
+          "x": 288,
+          "y": 660
+        },
+        {
+          "x": 282,
+          "y": 755
+        }
+      ],
+      "distance": 95,
+      "length_m": 95,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 95,
+        "accessible": 95,
+        "indoor_preferred": 102.6
+      }
+    },
+    {
+      "id": "e-research-hall-futsal-tennis",
+      "from": "n-research-hall",
+      "to": "n-futsal-tennis",
+      "geometry": [
+        {
+          "x": 302,
+          "y": 535
+        },
+        {
+          "x": 295,
+          "y": 412
+        }
+      ],
+      "distance": 123,
+      "length_m": 123,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 123,
+        "accessible": 123,
+        "indoor_preferred": 132.84
+      }
+    },
+    {
+      "id": "e-futsal-tennis-truth-hall",
+      "from": "n-futsal-tennis",
+      "to": "n-truth-hall",
+      "geometry": [
+        {
+          "x": 295,
+          "y": 412
+        },
+        {
+          "x": 319,
+          "y": 285
+        }
+      ],
+      "distance": 129,
+      "length_m": 129,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 129,
+        "accessible": 129,
+        "indoor_preferred": 139.32
+      }
+    },
+    {
+      "id": "e-truth-hall-haksong-hall",
+      "from": "n-truth-hall",
+      "to": "n-haksong-hall",
+      "geometry": [
+        {
+          "x": 319,
+          "y": 285
+        },
+        {
+          "x": 372,
+          "y": 185
+        }
+      ],
+      "distance": 113,
+      "length_m": 113,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 113,
+        "accessible": 113,
+        "indoor_preferred": 122.04
+      }
+    },
+    {
+      "id": "e-haksong-hall-exploration-hall",
+      "from": "n-haksong-hall",
+      "to": "n-exploration-hall",
+      "geometry": [
+        {
+          "x": 372,
+          "y": 185
+        },
+        {
+          "x": 158,
+          "y": 142
+        }
+      ],
+      "distance": 218,
+      "length_m": 218,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 218,
+        "accessible": 218,
+        "indoor_preferred": 235.44
+      }
+    },
+    {
+      "id": "e-exploration-hall-sangsang-cube",
+      "from": "n-exploration-hall",
+      "to": "n-sangsang-cube",
+      "geometry": [
+        {
+          "x": 158,
+          "y": 142
+        },
+        {
+          "x": 208,
+          "y": 42
+        }
+      ],
+      "distance": 112,
+      "length_m": 112,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 112,
+        "accessible": 112,
+        "indoor_preferred": 120.96
+      }
+    },
+    {
+      "id": "e-truth-hall-north-west",
+      "from": "n-truth-hall",
+      "to": "n-north-west",
+      "geometry": [
+        {
+          "x": 319,
+          "y": 285
+        },
+        {
+          "x": 145,
+          "y": 255
+        }
+      ],
+      "distance": 177,
+      "length_m": 177,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 177,
+        "accessible": 177,
+        "indoor_preferred": 191.16
+      }
+    },
+    {
+      "id": "e-north-west-rotc",
+      "from": "n-north-west",
+      "to": "n-rotc",
+      "geometry": [
+        {
+          "x": 145,
+          "y": 255
+        },
+        {
+          "x": 74,
+          "y": 242
+        }
+      ],
+      "distance": 72,
+      "length_m": 72,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 72,
+        "accessible": 72,
+        "indoor_preferred": 77.76
+      }
+    },
+    {
+      "id": "e-north-west-central-west",
+      "from": "n-north-west",
+      "to": "n-central-west",
+      "geometry": [
+        {
+          "x": 145,
+          "y": 255
+        },
+        {
+          "x": 170,
+          "y": 500
+        }
+      ],
+      "distance": 246,
+      "length_m": 246,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 246,
+        "accessible": 246,
+        "indoor_preferred": 265.68
+      }
+    },
+    {
+      "id": "e-central-west-research-hall",
+      "from": "n-central-west",
+      "to": "n-research-hall",
+      "geometry": [
+        {
+          "x": 170,
+          "y": 500
+        },
+        {
+          "x": 302,
+          "y": 535
+        }
+      ],
+      "distance": 137,
+      "length_m": 137,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 137,
+        "accessible": 137,
+        "indoor_preferred": 147.96
+      }
+    },
+    {
+      "id": "e-central-west-jiseon-hall",
+      "from": "n-central-west",
+      "to": "n-jiseon-hall",
+      "geometry": [
+        {
+          "x": 170,
+          "y": 500
+        },
+        {
+          "x": 288,
+          "y": 660
+        }
+      ],
+      "distance": 199,
+      "length_m": 199,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 199,
+        "accessible": 199,
+        "indoor_preferred": 214.92
+      }
+    },
+    {
+      "id": "e-central-west-west-slope",
+      "from": "n-central-west",
+      "to": "n-west-slope",
+      "geometry": [
+        {
+          "x": 170,
+          "y": 500
+        },
+        {
+          "x": 85,
+          "y": 565
+        }
+      ],
+      "distance": 107,
+      "length_m": 107,
+      "type": "ramp",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": null,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 107,
+        "accessible": 107,
+        "indoor_preferred": 115.56
+      }
+    },
+    {
+      "id": "e-west-slope-engineering-b",
+      "from": "n-west-slope",
+      "to": "n-engineering-b",
+      "geometry": [
+        {
+          "x": 85,
+          "y": 565
+        },
+        {
+          "x": 140,
+          "y": 866
+        }
+      ],
+      "distance": 306,
+      "length_m": 306,
+      "type": "ramp",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": null,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 306,
+        "accessible": 306,
+        "indoor_preferred": 330.48
+      }
+    },
+    {
+      "id": "e-future-hall-sangsang-hall",
+      "from": "n-future-hall",
+      "to": "n-sangsang-hall",
+      "geometry": [
+        {
+          "x": 656,
+          "y": 480
+        },
+        {
+          "x": 500,
+          "y": 422
+        }
+      ],
+      "distance": 166,
+      "length_m": 166,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 166,
+        "accessible": 166,
+        "indoor_preferred": 179.28
+      }
+    },
+    {
+      "id": "e-creativity-hall-insung-hall",
+      "from": "n-creativity-hall",
+      "to": "n-insung-hall",
+      "geometry": [
+        {
+          "x": 642,
+          "y": 645
+        },
+        {
+          "x": 650,
+          "y": 720
+        }
+      ],
+      "distance": 75,
+      "length_m": 75,
+      "type": "walkway",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 75,
+        "accessible": 75,
+        "indoor_preferred": 81.0
+      }
+    },
+    {
+      "id": "e-library-future-hall",
+      "from": "n-library",
+      "to": "n-future-hall",
+      "geometry": [
+        {
+          "x": 656,
+          "y": 480
+        },
+        {
+          "x": 656,
+          "y": 480
+        }
+      ],
+      "distance": 0,
+      "length_m": 0,
+      "type": "indoor",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 0,
+        "accessible": 0,
+        "indoor_preferred": 0.0
+      }
+    },
+    {
+      "id": "e-student-union-insung-hall",
+      "from": "n-student-union",
+      "to": "n-insung-hall",
+      "geometry": [
+        {
+          "x": 650,
+          "y": 720
+        },
+        {
+          "x": 650,
+          "y": 720
+        }
+      ],
+      "distance": 0,
+      "length_m": 0,
+      "type": "indoor",
+      "accessible": true,
+      "indoor": false,
+      "floor_from": 1,
+      "floor_to": 1,
+      "connectorType": "none",
+      "vertical_distance_m": 0,
+      "costProfiles": {
+        "default": 0,
+        "accessible": 0,
+        "indoor_preferred": 0.0
+      }
+    }
+  ],
+  "dataNote": "Manual seed aligned to a Hansung University campus guide image. Replace with surveyed GIS/indoor data before production.",
+  "schemaVersion": "2.0",
+  "coordinateSystem": {
+    "type": "LOCAL_METER_WITH_CANVAS_AND_WGS84",
+    "origin": {
+      "lat": 37.58255,
+      "lng": 127.01015,
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "axes": {
+      "x": "east_m",
+      "y": "north_m",
+      "z": "up_m"
+    },
+    "canvas": {
+      "width": 840,
+      "height": 1040
+    },
+    "canvasToLocal": {
+      "scaleX_mPerPx": 0.5,
+      "scaleY_mPerPx": 0.5,
+      "originCanvasX": 420.0,
+      "originCanvasY": 520.0,
+      "flipY": true
+    }
+  },
+  "levels": [
+    {
+      "id": "sangsang-hall-1f",
+      "buildingId": "sangsang-hall",
+      "floor": 1,
+      "name": "상상관 1층",
+      "z_m": 0,
+      "height_m": 3.5,
+      "floorPlan": {
+        "type": "none",
+        "imageUrl": null,
+        "polygonCanvas": null,
+        "footprintLocal": null
+      }
+    }
+  ],
+  "verticalConnectors": [
+    {
+      "id": "connector-sangsang-elevator-a",
+      "buildingId": "sangsang-hall",
+      "type": "elevator",
+      "name": "상상관 엘리베이터 A",
+      "accessible": true,
+      "servedFloors": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "nodeIdsByFloor": {}
+    }
+  ]
+}

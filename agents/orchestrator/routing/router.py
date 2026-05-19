@@ -7,10 +7,15 @@ from agents.orchestrator.routing.evidence import RoutingEvidence
 
 DOCUMENT_REVIEW_THRESHOLD = 0.70
 LIBRARY_THRESHOLD = 0.65
+CAMPUS_MAP_THRESHOLD = 0.62
 RULE_ADJUST_LIMIT = 0.12
 MAIN_NOTICE_TERMS = ("공지", "한성공지", "최신", "새로 올라온")
 LIBRARY_TERMS = ("도서관", "학술정보관", "대출", "반납", "연장", "열람실", "운영", "개관", "휴관", "책", "도서")
 DOC_TERMS = ("문서", "전자결재", "검토", "교정", "맞춤법", "기안", "공문")
+CAMPUS_LOCATION_TERMS = ("어디", "위치", "가는 길", "가는길", "길찾기", "출입구", "정문", "후문")
+CAMPUS_PLACE_TERMS = ("상상관", "학생회관", "학술정보관", "도서관", "공학관", "미래관", "탐구관", "진리관", "창의관", "우촌관", "인성관", "낙산관")
+CAMPUS_BUILDING_TERMS = ("상상관", "학생회관", "공학관", "미래관", "탐구관", "진리관", "창의관", "우촌관", "인성관", "낙산관")
+BOOK_LOCATION_TERMS = ("책", "도서", "청구기호", "서가", "소장")
 
 
 @dataclass(frozen=True)
@@ -40,7 +45,7 @@ class EvidenceBasedRouter:
                 evidence,
                 "explicit document review evidence selected",
                 raw_scores=_raw_scores(evidence),
-                rule_adjustments={"MAIN": 0.0, "LIBRARY": 0.0, "DOCUMENT_REVIEW": 0.0},
+                rule_adjustments={"MAIN": 0.0, "LIBRARY": 0.0, "DOCUMENT_REVIEW": 0.0, "CAMPUS_MAP": 0.0},
                 final_scores=_raw_scores(evidence),
             )
         if evidence.document_review.score >= DOCUMENT_REVIEW_THRESHOLD:
@@ -51,11 +56,11 @@ class EvidenceBasedRouter:
                 _compose_reason(
                     "document review evidence exceeded threshold",
                     raw_scores,
-                    {"MAIN": 0.0, "LIBRARY": 0.0, "DOCUMENT_REVIEW": 0.0},
+                    {"MAIN": 0.0, "LIBRARY": 0.0, "DOCUMENT_REVIEW": 0.0, "CAMPUS_MAP": 0.0},
                     raw_scores,
                 ),
                 raw_scores=raw_scores,
-                rule_adjustments={"MAIN": 0.0, "LIBRARY": 0.0, "DOCUMENT_REVIEW": 0.0},
+                rule_adjustments={"MAIN": 0.0, "LIBRARY": 0.0, "DOCUMENT_REVIEW": 0.0, "CAMPUS_MAP": 0.0},
                 final_scores=raw_scores,
             )
 
@@ -77,6 +82,15 @@ class EvidenceBasedRouter:
                 rule_adjustments=rule_adjustments,
                 final_scores=final_scores,
             )
+        if top_agent == "CAMPUS_MAP" and _has_book_location_terms(message):
+            return _decision_for(
+                "LIBRARY" if final_scores.get("LIBRARY", 0.0) >= 0.4 else "MAIN",
+                evidence,
+                _compose_reason("book location query avoided CAMPUS_MAP", raw_scores, rule_adjustments, final_scores),
+                raw_scores=raw_scores,
+                rule_adjustments=rule_adjustments,
+                final_scores=final_scores,
+            )
 
         if top_agent == "DOCUMENT_REVIEW" and top_score >= DOCUMENT_REVIEW_THRESHOLD:
             return _decision_for(
@@ -92,6 +106,15 @@ class EvidenceBasedRouter:
                 "LIBRARY",
                 evidence,
                 _compose_reason("library final score selected", raw_scores, rule_adjustments, final_scores),
+                raw_scores=raw_scores,
+                rule_adjustments=rule_adjustments,
+                final_scores=final_scores,
+            )
+        if top_agent == "CAMPUS_MAP" and top_score >= CAMPUS_MAP_THRESHOLD:
+            return _decision_for(
+                "CAMPUS_MAP",
+                evidence,
+                _compose_reason("campus map final score selected", raw_scores, rule_adjustments, final_scores),
                 raw_scores=raw_scores,
                 rule_adjustments=rule_adjustments,
                 final_scores=final_scores,
@@ -163,6 +186,16 @@ def _decision_for(
             rule_adjustments=rule_adjustments or {},
             final_scores=final_scores or {},
         )
+    if target == "CAMPUS_MAP":
+        return RouteDecision(
+            target_agent="CAMPUS_MAP",
+            intent="CAMPUS_MAP",
+            confidence=evidence.campus_map.score,
+            reason=f"{prefix}: {evidence.campus_map.reason}",
+            raw_scores=raw_scores or {},
+            rule_adjustments=rule_adjustments or {},
+            final_scores=final_scores or {},
+        )
     return RouteDecision(
         target_agent="FALLBACK",
         intent="FALLBACK",
@@ -179,6 +212,7 @@ def _raw_scores(evidence: RoutingEvidence) -> dict[str, float]:
         "MAIN": _clamp(evidence.main.score),
         "LIBRARY": _clamp(evidence.library.score),
         "DOCUMENT_REVIEW": _clamp(evidence.document_review.score),
+        "CAMPUS_MAP": _clamp(evidence.campus_map.score),
     }
 
 
@@ -187,6 +221,7 @@ def _rule_adjustments(message: str) -> dict[str, float]:
     main_adj = 0.0
     library_adj = 0.0
     doc_adj = 0.0
+    campus_adj = 0.0
     if _contains_any_term(lowered, MAIN_NOTICE_TERMS):
         main_adj += 0.10
         library_adj -= 0.05
@@ -195,10 +230,17 @@ def _rule_adjustments(message: str) -> dict[str, float]:
     if _contains_any_term(lowered, DOC_TERMS):
         doc_adj += 0.10
         main_adj -= 0.03
+    has_campus_location_intent = _contains_any_term(lowered, CAMPUS_LOCATION_TERMS) and _contains_any_term(lowered, CAMPUS_PLACE_TERMS)
+    has_non_library_building = _contains_any_term(lowered, CAMPUS_BUILDING_TERMS)
+    if has_campus_location_intent or has_non_library_building:
+        campus_adj += 0.12
+        if not _has_book_location_terms(lowered):
+            library_adj -= 0.08
     return {
         "MAIN": _cap_adjust(main_adj),
         "LIBRARY": _cap_adjust(library_adj),
         "DOCUMENT_REVIEW": _cap_adjust(doc_adj),
+        "CAMPUS_MAP": _cap_adjust(campus_adj),
     }
 
 
@@ -218,15 +260,20 @@ def _compose_reason(
 ) -> str:
     return (
         f"{prefix}; "
-        f"raw={{main:{raw_scores['MAIN']:.3f},library:{raw_scores['LIBRARY']:.3f},doc:{raw_scores['DOCUMENT_REVIEW']:.3f}}} "
-        f"rule={{main:{rule_adjustments['MAIN']:+.2f},library:{rule_adjustments['LIBRARY']:+.2f},doc:{rule_adjustments['DOCUMENT_REVIEW']:+.2f}}} "
-        f"final={{main:{final_scores['MAIN']:.3f},library:{final_scores['LIBRARY']:.3f},doc:{final_scores['DOCUMENT_REVIEW']:.3f}}}"
+        f"raw={{main:{raw_scores['MAIN']:.3f},library:{raw_scores['LIBRARY']:.3f},doc:{raw_scores['DOCUMENT_REVIEW']:.3f},campus:{raw_scores['CAMPUS_MAP']:.3f}}} "
+        f"rule={{main:{rule_adjustments['MAIN']:+.2f},library:{rule_adjustments['LIBRARY']:+.2f},doc:{rule_adjustments['DOCUMENT_REVIEW']:+.2f},campus:{rule_adjustments['CAMPUS_MAP']:+.2f}}} "
+        f"final={{main:{final_scores['MAIN']:.3f},library:{final_scores['LIBRARY']:.3f},doc:{final_scores['DOCUMENT_REVIEW']:.3f},campus:{final_scores['CAMPUS_MAP']:.3f}}}"
     )
 
 
 def _has_library_domain_terms(message: str) -> bool:
     lowered = (message or "").lower()
     return _contains_any_term(lowered, LIBRARY_TERMS)
+
+
+def _has_book_location_terms(message: str) -> bool:
+    lowered = (message or "").lower()
+    return _contains_any_term(lowered, BOOK_LOCATION_TERMS) and not _contains_any_term(lowered, ("도서관", "학술정보관"))
 
 
 def _contains_any_term(message: str, terms: tuple[str, ...]) -> bool:

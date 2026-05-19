@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from agents.campus_map.api.router import router as campus_map_router
 from agents.document_review.api.router import router as document_review_router
 from agents.library.api.router import router as library_router
 from agents.main_agent.api.router import router as main_agent_router
@@ -36,6 +37,7 @@ app.include_router(main_agent_router)
 app.include_router(orchestrator_router)
 app.include_router(ingestion_router)
 app.include_router(document_review_router)
+app.include_router(campus_map_router)
 
 
 @app.get("/health")

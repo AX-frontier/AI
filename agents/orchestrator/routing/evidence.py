@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 
+from agents.campus_map.routing import collect_campus_map_evidence
 from agents.document_review.routing import collect_document_review_evidence
 from agents.library.classifier import classify_intent, extract_search_keyword
 from agents.library.repository import LibraryRepository, get_library_repository
@@ -32,6 +33,7 @@ class RoutingEvidence:
     main: AgentEvidence
     library: AgentEvidence
     document_review: AgentEvidence
+    campus_map: AgentEvidence = field(default_factory=lambda: AgentEvidence(score=0.0, reason="not evaluated"))
 
 
 class RoutingEvidenceCollector:
@@ -59,29 +61,35 @@ class RoutingEvidenceCollector:
                 main=AgentEvidence(score=0.0, reason="skipped: document review fast path"),
                 library=AgentEvidence(score=0.0, reason="skipped: document review fast path"),
                 document_review=doc_evidence,
+                campus_map=AgentEvidence(score=0.0, reason="skipped: document review fast path"),
             )
             logger.info(
-                "orchestrator.evidence main=%.3f library=%.3f document_review=%.3f fast_path=true",
+                "orchestrator.evidence main=%.3f library=%.3f document_review=%.3f campus_map=%.3f fast_path=true",
                 result.main.score,
                 result.library.score,
                 result.document_review.score,
+                result.campus_map.score,
             )
             return result
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             future_main = pool.submit(self._collect_main_evidence, text)
             future_lib  = pool.submit(self._collect_library_evidence, text)
+            future_campus = pool.submit(self._collect_campus_map_evidence, text)
             main_evidence    = future_main.result()
             library_evidence = future_lib.result()
+            campus_evidence = future_campus.result()
         result = RoutingEvidence(
             main=main_evidence,
             library=library_evidence,
             document_review=doc_evidence,
+            campus_map=campus_evidence,
         )
         logger.info(
-            "orchestrator.evidence main=%.3f library=%.3f document_review=%.3f",
+            "orchestrator.evidence main=%.3f library=%.3f document_review=%.3f campus_map=%.3f",
             result.main.score,
             result.library.score,
             result.document_review.score,
+            result.campus_map.score,
         )
         return result
 
@@ -134,4 +142,8 @@ class RoutingEvidenceCollector:
 
     def _collect_document_review_evidence(self, message: str) -> AgentEvidence:
         evidence = collect_document_review_evidence(message)
+        return AgentEvidence(score=evidence.score, reason=evidence.reason)
+
+    def _collect_campus_map_evidence(self, message: str) -> AgentEvidence:
+        evidence = collect_campus_map_evidence(message)
         return AgentEvidence(score=evidence.score, reason=evidence.reason)

@@ -1,0 +1,2 @@
+"""Campus map agent tests."""
+
