@@ -163,6 +163,15 @@ def test_recommendation_question_prefers_book_recommendation() -> None:
     assert result.intent == "BOOK_RECOMMENDATION"
 
 
+def test_popular_book_question_prefers_book_recommendation_without_results() -> None:
+    result = classify_intent(
+        "가장 인기있는 책은 뭐야?",
+        evidence=RetrievalEvidence(),
+    )
+
+    assert result.intent == "BOOK_RECOMMENDATION"
+
+
 def test_physical_book_search_beats_ebook_guide_term() -> None:
     result = classify_intent(
         "전자책 말고 종이책 찾아줘",
