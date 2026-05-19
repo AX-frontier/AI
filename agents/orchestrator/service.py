@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Iterator
 
+from agents.campus_map.agent import run_campus_map_agent
+from agents.campus_map.api.schemas import CampusMapRequest
 from agents.document_review.agent import run_document_review_agent
 from agents.document_review.api.schemas import DocumentReviewRequest
 from agents.library.agent import run_library_agent, run_library_agent_stream
@@ -52,7 +54,7 @@ _AMBIGUOUS_VAGUE_TOKENS = (
 _DATA_PREPARING_REASON_CODES = {"NO_CHUNKS", "TOPIC_MISMATCH_NO_DATA"}
 _DATA_PREPARING_MESSAGE = (
     "관련 안내 데이터가 아직 준비되지 않았습니다. "
-    "분실 장소/건물명/담당 부서(예: 학술정보관, 학생처)로 다시 질문해 주세요."
+    "공지 주제/건물명/담당 부서(예: 학술정보관, 학생처)로 다시 질문해 주세요."
 )
 
 
@@ -114,9 +116,11 @@ def resolve_target_agent(
                 mainScore=evidence.main.score,
                 libraryScore=evidence.library.score,
                 documentReviewScore=evidence.document_review.score,
+                campusMapScore=evidence.campus_map.score,
                 mainReason=evidence.main.reason,
                 libraryReason=evidence.library.reason,
                 documentReviewReason=evidence.document_review.reason,
+                campusMapReason=evidence.campus_map.reason,
             ),
             routingMode="FRESH",
             routingReasonCode="FRESH_DEFAULT",
@@ -135,9 +139,11 @@ def resolve_target_agent(
                 mainScore=evidence.main.score,
                 libraryScore=evidence.library.score,
                 documentReviewScore=evidence.document_review.score,
+                campusMapScore=evidence.campus_map.score,
                 mainReason=evidence.main.reason,
                 libraryReason=evidence.library.reason,
                 documentReviewReason=evidence.document_review.reason,
+                campusMapReason=evidence.campus_map.reason,
             ),
             routingMode="FRESH",
             routingReasonCode="FRESH_DEFAULT",
@@ -271,6 +277,7 @@ def _top_two_scores(evidence, final_scores: dict[str, float] | None = None) -> t
                 ("MAIN", evidence.main.score),
                 ("LIBRARY", evidence.library.score),
                 ("DOCUMENT_REVIEW", evidence.document_review.score),
+                ("CAMPUS_MAP", evidence.campus_map.score),
             ],
             key=lambda item: item[1],
             reverse=True,
@@ -294,6 +301,8 @@ def _is_ambiguous_query(
     if top_target == "LIBRARY" and any(token in lowered for token in ("도서관", "학술정보관", "대출", "반납", "연장", "열람실", "개관", "휴관")):
         return False
     if top_target == "DOCUMENT_REVIEW" and any(token in lowered for token in ("문서", "전자결재", "검토", "교정", "기안", "공문")):
+        return False
+    if top_target == "CAMPUS_MAP" and any(token in lowered for token in ("어디", "위치", "가는 길", "길찾기", "출입구", "정문", "후문")):
         return False
     score = _compute_ambiguity_score(
         message,
@@ -356,7 +365,7 @@ def _resolve_explicit_intent_gate(message: str, evidence) -> ExplicitIntentGate 
 def _build_ambiguous_reask_message() -> str:
     return (
         "요청 의도가 모호합니다. 아래 중 하나로 다시 입력해 주세요: "
-        "1) 학교공지 안내 2) 도서 검색 3) 문서 검토"
+        "1) 학교공지 안내 2) 도서 검색 3) 문서 검토 4) 캠퍼스 위치/길찾기"
     )
 
 
@@ -367,6 +376,8 @@ def _agent_score(evidence, target: str) -> float:
         return evidence.library.score
     if target == "DOCUMENT_REVIEW":
         return evidence.document_review.score
+    if target == "CAMPUS_MAP":
+        return evidence.campus_map.score
     return 0.0
 
 
@@ -380,6 +391,8 @@ def _parse_user_agent_override(message: str) -> str | None:
         return "LIBRARY"
     if "문서 검토 에이전트" in message or "document review" in lowered:
         return "DOCUMENT_REVIEW"
+    if "캠퍼스맵 에이전트" in message or "캠퍼스 맵 에이전트" in message or "campus map" in lowered:
+        return "CAMPUS_MAP"
     return None
 
 
@@ -556,6 +569,29 @@ def execute_routed_query(
             )
             return response
 
+        if route_result.targetAgent == "CAMPUS_MAP":
+            response = run_campus_map_agent(
+                CampusMapRequest(
+                    queryUid=str(request.queryUid),
+                    traceId=str(request.traceId),
+                    conversationUid=str(request.conversationUid),
+                    message=resolved_message,
+                    clientLocation=request.clientLocation,
+                )
+            )
+            _remember_orchestrator_context(
+                str(request.conversationUid),
+                route_result.targetAgent,
+                _extract_memory_topic(resolved_message),
+            )
+            logger.info(
+                "orchestrator.chat done query_uid=%s target_agent=%s elapsed_ms=%d",
+                request.queryUid,
+                route_result.targetAgent,
+                int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            )
+            return response
+
         if route_result.targetAgent == "FALLBACK":
             logger.info(
                 "orchestrator.chat done query_uid=%s target_agent=%s fallback_reason=%s elapsed_ms=%d",
@@ -678,6 +714,24 @@ def stream_orchestrator_chat(
             llm_client=llm,
         ):
             yield _sse_event(event)
+        return
+
+    if route_result.targetAgent == "CAMPUS_MAP":
+        response = run_campus_map_agent(
+            CampusMapRequest(
+                queryUid=str(request.queryUid),
+                traceId=str(request.traceId),
+                conversationUid=str(request.conversationUid),
+                message=resolved_message,
+                clientLocation=request.clientLocation,
+            )
+        )
+        _remember_orchestrator_context(
+            str(request.conversationUid),
+            route_result.targetAgent,
+            _extract_memory_topic(resolved_message),
+        )
+        yield _sse_event({'type': 'done', **response.model_dump()})
         return
 
     # DOCUMENT_REVIEW 및 나머지 케이스: 동기 실행 후 chunk + done 이벤트로 전송

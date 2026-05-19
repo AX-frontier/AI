@@ -4,11 +4,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from agents.campus_map.api.schemas import CampusMapResponse, ClientLocation
 from agents.document_review.api.schemas import DocumentReviewResponse, ReviewDocument
 from agents.library.api.schemas import LibraryChatResponse
 from agents.main_agent.api.schemas import MainChatResponse
 
-TargetAgent = Literal["MAIN", "LIBRARY", "DOCUMENT_REVIEW", "FALLBACK", "DATA_PREPARING"]
+TargetAgent = Literal["MAIN", "LIBRARY", "DOCUMENT_REVIEW", "CAMPUS_MAP", "FALLBACK", "DATA_PREPARING"]
 RoutingMode = Literal["FRESH", "FOLLOWUP_STICKY"]
 RoutingReasonCode = Literal[
     "FRESH_DEFAULT",
@@ -33,6 +34,7 @@ class OrchestratorChatRequest(OrchestratorRouteRequest):
     """라우팅 후 실행까지 위임할 때 사용하는 통합 요청 본문."""
 
     document: ReviewDocument | None = None
+    clientLocation: ClientLocation | dict[str, Any] | None = None
 
 
 class RoutingEvidencePayload(BaseModel):
@@ -41,9 +43,11 @@ class RoutingEvidencePayload(BaseModel):
     mainScore: float
     libraryScore: float
     documentReviewScore: float
+    campusMapScore: float = 0.0
     mainReason: str
     libraryReason: str
     documentReviewReason: str
+    campusMapReason: str = "not evaluated"
 
 
 class OrchestratorRouteResponse(BaseModel):
@@ -100,6 +104,7 @@ OrchestratorChatResponse = (
     MainChatResponse
     | LibraryChatResponse
     | DocumentReviewResponse
+    | CampusMapResponse
     | DocumentReviewInputRequiredResponse
     | DataPreparingResponse
     | OrchestratorFallbackResponse
