@@ -122,6 +122,20 @@ def test_routes_to_library_when_library_score_is_high() -> None:
     assert decision.intent == "LIBRARY"
 
 
+def test_spaced_library_term_does_not_trigger_domain_mismatch_fallback() -> None:
+    decision = EvidenceBasedRouter().route(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.82, reason="main hit"),
+            library=AgentEvidence(score=0.90, reason="library hit"),
+            document_review=AgentEvidence(score=0.0, reason="no doc hit"),
+        ),
+        message="학술 정보관 어디있어",
+    )
+
+    assert decision.target_agent == "LIBRARY"
+    assert decision.intent == "LIBRARY"
+
+
 def test_routes_to_main_when_only_main_vector_score_is_valid() -> None:
     decision = EvidenceBasedRouter().route(
         RoutingEvidence(
