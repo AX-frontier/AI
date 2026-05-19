@@ -187,12 +187,12 @@ def _rule_adjustments(message: str) -> dict[str, float]:
     main_adj = 0.0
     library_adj = 0.0
     doc_adj = 0.0
-    if any(term in lowered for term in MAIN_NOTICE_TERMS):
+    if _contains_any_term(lowered, MAIN_NOTICE_TERMS):
         main_adj += 0.10
         library_adj -= 0.05
-    if any(term in lowered for term in LIBRARY_TERMS):
+    if _contains_any_term(lowered, LIBRARY_TERMS):
         library_adj += 0.10
-    if any(term in lowered for term in DOC_TERMS):
+    if _contains_any_term(lowered, DOC_TERMS):
         doc_adj += 0.10
         main_adj -= 0.03
     return {
@@ -226,4 +226,19 @@ def _compose_reason(
 
 def _has_library_domain_terms(message: str) -> bool:
     lowered = (message or "").lower()
-    return any(term in lowered for term in LIBRARY_TERMS)
+    return _contains_any_term(lowered, LIBRARY_TERMS)
+
+
+def _contains_any_term(message: str, terms: tuple[str, ...]) -> bool:
+    compact_message = _compact_text(message)
+    for term in terms:
+        normalized_term = term.lower()
+        if normalized_term in message:
+            return True
+        if _compact_text(normalized_term) in compact_message:
+            return True
+    return False
+
+
+def _compact_text(text: str) -> str:
+    return "".join(text.split())

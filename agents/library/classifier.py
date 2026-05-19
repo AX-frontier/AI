@@ -273,12 +273,14 @@ def extract_search_keyword(
         suffix_pattern = "|".join(re.escape(term) for term in BOOK_QUERY_SUFFIXES)
         cleaned = re.sub(rf"\s*(?:{suffix_pattern})\s*$", "", cleaned).strip()
         cleaned = re.sub(r"\s*(책|도서)[이가을를은는]?\s*$", "", cleaned).strip()
+        cleaned = re.sub(r"(학술\s*정보관|도서관)", " ", cleaned).strip()
         qualifier_pattern = "|".join(re.escape(term) for term in BOOK_FIELD_QUALIFIERS)
         cleaned = re.sub(
             rf"(?:\s+(?:{qualifier_pattern})[이가을를은는]?\s*)+$",
             "",
             cleaned,
         ).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
         leading_particle_pattern = "|".join(re.escape(term) for term in LEADING_POSTPOSITIONS)
         cleaned = re.sub(rf"^(?:{leading_particle_pattern})\s+", "", cleaned).strip()
         for source, replacement in BOOK_TOPIC_SUFFIX_REWRITES:
@@ -434,14 +436,22 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
 
 
 def _contains_any(normalized: str, terms: tuple[str, ...]) -> bool:
-    return any(term in normalized for term in terms)
+    compact_normalized = _compact_text(normalized)
+    for term in terms:
+        normalized_term = term.lower()
+        if normalized_term in normalized:
+            return True
+        if _compact_text(normalized_term) in compact_normalized:
+            return True
+    return False
 
 
 def _matched_keywords(keywords: tuple[str, ...], normalized: str) -> tuple[str, ...]:
+    compact_normalized = _compact_text(normalized)
     matched = []
     for keyword in keywords:
         normalized_keyword = keyword.lower()
-        if normalized_keyword not in normalized:
+        if normalized_keyword not in normalized and _compact_text(normalized_keyword) not in compact_normalized:
             continue
         if normalized_keyword == "서가" and not _is_valid_shelf_keyword(normalized):
             continue
@@ -516,3 +526,7 @@ def _default_llm_classifier() -> LLMIntentClassifier:
     if os.getenv("LIBRARY_LLM_CLASSIFIER_ENABLED", "false").lower() != "true":
         return DisabledLLMIntentClassifier()
     return DisabledLLMIntentClassifier()
+
+
+def _compact_text(text: str) -> str:
+    return "".join(text.split())

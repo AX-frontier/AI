@@ -221,6 +221,7 @@ def test_extract_search_keyword_keeps_generic_book_term_for_short_book_queries()
     assert extract_search_keyword("책 있어?", "BOOK_SEARCH") == "책"
     assert extract_search_keyword("책 찾아줘", "BOOK_SEARCH") == "책"
     assert extract_search_keyword("학술정보관 책", "BOOK_SEARCH") == "책"
+    assert extract_search_keyword("학술 정보관 책", "BOOK_SEARCH") == "책"
 
 
 def test_extract_search_keyword_prefers_replacement_topic_after_exceptive_phrase() -> None:
