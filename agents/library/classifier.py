@@ -22,7 +22,29 @@ BOOK_TOPIC_HINTS = ("입문서", "교재", "전공서", "참고서")
 BOOK_QUERY_SUFFIXES = ("있어", "있나요", "있니", "있는지", "보여줘", "알려줘")
 BOOK_TOPIC_SUFFIX_REWRITES = (("입문서", "입문"),)
 LEADING_POSTPOSITIONS = ("에", "에서", "의", "은", "는", "이", "가", "을", "를")
-RECOMMENDATION_HINTS = ("추천", "볼만한", "읽을만", "읽을 만", "비슷한")
+RECOMMENDATION_HINTS = (
+    "추천",
+    "볼만한",
+    "읽을만",
+    "읽을 만",
+    "비슷한",
+    "인기",
+    "인기있는",
+    "인기 있는",
+    "베스트",
+    "베스트셀러",
+    "많이 읽",
+    "유명",
+)
+POPULARITY_HINTS = (
+    "인기",
+    "인기있는",
+    "인기 있는",
+    "베스트",
+    "베스트셀러",
+    "많이 읽",
+    "유명",
+)
 GUIDE_SPECIFIC_TERMS = (
     "규정",
     "세칙",
@@ -349,6 +371,10 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
     has_location_hint = _has_location_hint(normalized)
     has_book_hint = _contains_any(normalized, BOOK_HINTS)
     has_recommendation_hint = _contains_any(normalized, RECOMMENDATION_HINTS)
+    has_popular_book_hint = _contains_any(normalized, POPULARITY_HINTS) and _contains_any(
+        normalized,
+        BOOK_GENERIC_TERMS,
+    )
     has_generic_library_term = _contains_any(normalized, GENERIC_LIBRARY_TERMS)
     has_guide_specific_term = _contains_any(normalized, GUIDE_SPECIFIC_TERMS)
     has_guide_payment_term = _contains_any(normalized, GUIDE_PAYMENT_TERMS)
@@ -362,6 +388,8 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
     rejects_recommendation = "추천 말고" in normalized
 
     if intent == "BOOK_SEARCH":
+        if has_popular_book_hint:
+            bonus -= 1.5
         if has_generic_library_term and has_guide_policy_term and not has_book_hint:
             bonus -= 1.2
         if _contains_any(normalized, BOOK_TOPIC_HINTS):
@@ -382,6 +410,8 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
             bonus -= 1.4
 
     if intent == "BOOK_LOCATION":
+        if has_popular_book_hint:
+            bonus -= 0.9
         if has_generic_library_term and has_guide_policy_term and not has_book_hint:
             bonus -= 1.2
         if has_guide_payment_term and not has_book_hint:
@@ -398,14 +428,18 @@ def _heuristic_bonus(intent: LibraryIntent, normalized: str, evidence: Retrieval
             bonus += 0.2
 
     if intent == "BOOK_RECOMMENDATION":
+        if has_popular_book_hint:
+            bonus += 1.75
         if has_generic_library_term and has_guide_policy_term and not has_recommendation_hint:
             bonus -= 1.2
-        if has_recommendation_hint and has_book_hint:
+        if has_recommendation_hint and has_book_hint and not rejects_recommendation:
             bonus += 1.45
+        if has_recommendation_hint and _contains_any(normalized, ("가장", "제일", "top", "탑")):
+            bonus += 0.55
         if has_location_hint:
             bonus -= 0.65
         if rejects_recommendation and has_recommendation_hint:
-            bonus -= 1.35
+            bonus -= 2.5
         if has_guide_staff_term and not has_book_hint:
             bonus -= 1.2
 

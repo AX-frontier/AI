@@ -23,6 +23,8 @@ def rank_book_recommendations(
     *,
     aladin_client: AladinClient | None = None,
     aladin_weight: float = 1.0,
+    expected_kdc: tuple[str, ...] = (),
+    recommendation_mode: str | None = None,
 ) -> list[RankedBook]:
     """내부 소장 도서 후보를 추천용 점수로 재정렬한다."""
     if not books:
@@ -42,6 +44,8 @@ def rank_book_recommendations(
             group.book,
             aladin_signals.get(group.book.id),
             aladin_weight=aladin_weight,
+            expected_kdc=expected_kdc,
+            recommendation_mode=recommendation_mode,
             holding_count=group.holding_count,
             dedupe_key=group.dedupe_key,
         )
@@ -56,6 +60,7 @@ def build_recommendation_summary(
     expandedFrom: str | None = None,
     includeSemantic: bool = False,
     queryInterpretation: dict | None = None,
+    aladinReference: dict | None = None,
 ) -> dict:
     basis = []
     rank_reasons = []
@@ -77,6 +82,8 @@ def build_recommendation_summary(
         basis.insert(0, "internal_search")
     if includeSemantic and "semantic" not in basis:
         basis.insert(1, "semantic")
+    if aladinReference and "aladin_bestseller" not in basis:
+        basis.append("aladin_bestseller")
 
     summary = {
         "contentType": "book_recommendation",
@@ -87,6 +94,8 @@ def build_recommendation_summary(
         summary["expandedFrom"] = expandedFrom
     if queryInterpretation:
         summary["queryInterpretation"] = queryInterpretation
+    if aladinReference:
+        summary["aladinReference"] = aladinReference
     return summary
 
 
@@ -103,6 +112,8 @@ def _rank_book(
     aladin: AladinPopularity | None,
     *,
     aladin_weight: float,
+    expected_kdc: tuple[str, ...],
+    recommendation_mode: str | None,
     holding_count: int,
     dedupe_key: str,
 ) -> RankedBook:
@@ -125,6 +136,19 @@ def _rank_book(
     if availability > 0:
         score += availability
         reasons.append("소장 위치 정보가 충분함")
+
+    kdc = _kdc_group(book.holding_call_no)
+    if expected_kdc and kdc in expected_kdc:
+        score += 0.45
+        basis.append("kdc_boost")
+        reasons.append(f"주제 분류({kdc})가 질의 의도와 맞음")
+
+    mode_adjustment = _mode_adjustment(recommendation_mode, book)
+    if mode_adjustment:
+        score += mode_adjustment.score
+        if mode_adjustment.basis and mode_adjustment.basis not in basis:
+            basis.append(mode_adjustment.basis)
+        reasons.append(mode_adjustment.reason)
 
     if aladin is not None:
         score += aladin.popularity_score * max(aladin_weight, 0.0)
@@ -238,6 +262,120 @@ def _availability_score(book: BookRecord) -> float:
     if book.stack_shelf:
         score += 0.15
     return score
+
+
+def _kdc_group(call_no: str | None) -> str | None:
+    if not call_no:
+        return None
+    match = re.search(r"(\d)", call_no)
+    return f"{match.group(1)}00" if match else None
+
+
+@dataclass(frozen=True)
+class _ModeAdjustment:
+    score: float
+    reason: str
+    basis: str | None = None
+
+
+def _mode_adjustment(mode: str | None, book: BookRecord) -> _ModeAdjustment | None:
+    if mode == "fiction_reading":
+        return _fiction_reading_adjustment(book)
+    if mode == "fiction_study":
+        return _fiction_study_adjustment(book)
+    return None
+
+
+def _fiction_reading_adjustment(book: BookRecord) -> _ModeAdjustment | None:
+    text = _book_text(book)
+    call_prefix = _call_no_prefix(book.holding_call_no)
+    score = 0.0
+    reason_parts: list[str] = []
+    if call_prefix in _FICTION_CALL_PREFIXES:
+        score += 1.0
+        reason_parts.append("소설 작품 분류")
+    if any(term in text for term in _FICTION_WORK_TERMS):
+        score += 0.85
+        reason_parts.append("작품/소설집 성격")
+    if any(term in text for term in _FICTION_STUDY_TERMS):
+        score -= 1.35
+        reason_parts.append("작법/연구서는 낮게 반영")
+    if score == 0:
+        return None
+    return _ModeAdjustment(round(score, 3), ", ".join(reason_parts), "fiction_reading")
+
+
+def _fiction_study_adjustment(book: BookRecord) -> _ModeAdjustment | None:
+    text = _book_text(book)
+    score = 0.0
+    reason_parts: list[str] = []
+    if any(term in text for term in _FICTION_STUDY_TERMS):
+        score += 1.0
+        reason_parts.append("작법/연구 질의와 맞음")
+    if any(term in text for term in _FICTION_WORK_TERMS):
+        score -= 0.45
+        reason_parts.append("작품 자체는 낮게 반영")
+    if score == 0:
+        return None
+    return _ModeAdjustment(round(score, 3), ", ".join(reason_parts), "fiction_study")
+
+
+def _book_text(book: BookRecord) -> str:
+    return " ".join(
+        part.lower()
+        for part in (
+            book.title or "",
+            book.author or "",
+            book.publisher or "",
+            book.holding_call_no or "",
+        )
+        if part
+    )
+
+
+def _call_no_prefix(call_no: str | None) -> str | None:
+    if not call_no:
+        return None
+    match = re.search(r"(\d{3})", call_no)
+    return match.group(1) if match else None
+
+
+_FICTION_CALL_PREFIXES = {
+    "813",
+    "823",
+    "833",
+    "843",
+    "853",
+    "863",
+    "873",
+    "883",
+    "893",
+}
+_FICTION_WORK_TERMS = (
+    "장편소설",
+    "단편소설",
+    "소설집",
+    "작품집",
+    "수상작",
+    "세계문학",
+    "문학전집",
+)
+_FICTION_STUDY_TERMS = (
+    "강의",
+    "작법",
+    "쓰기",
+    "소설쓰기",
+    "소설가 되기",
+    "연구",
+    "비평",
+    "평론",
+    "평론집",
+    "장르",
+    "문학사",
+    "전변",
+    "위상",
+    "텍스트 읽기",
+)
 
 
 def _terms(keyword: str) -> list[str]:

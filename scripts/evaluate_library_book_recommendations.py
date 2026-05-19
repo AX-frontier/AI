@@ -17,6 +17,7 @@ class RecommendationCase:
     name: str
     message: str
     expected_terms: tuple[str, ...]
+    expected_kdc: tuple[str, ...] = ()
     excluded_terms: tuple[str, ...] = ()
 
 
@@ -31,6 +32,7 @@ class RecommendationCaseResult:
     recommendation_basis: list[str]
     duplicate_free: bool
     expected_term_found: bool
+    expected_kdc_found: bool
     excluded_term_absent: bool
     rank_reasons_present: bool
     top_titles: list[str]
@@ -38,16 +40,16 @@ class RecommendationCaseResult:
 
 
 RECOMMENDATION_CASES: tuple[RecommendationCase, ...] = (
-    RecommendationCase("python_intro", "파이썬 입문 책 추천해줘", ("파이썬", "python")),
-    RecommendationCase("ai", "인공지능 책 추천해줘", ("인공지능", "ai", "머신러닝", "딥러닝")),
-    RecommendationCase("data_analysis", "데이터 분석 책 추천해줘", ("데이터", "분석", "통계")),
-    RecommendationCase("economics", "경제 책 추천해줘", ("경제", "금융", "경영")),
-    RecommendationCase("novel", "소설 책 추천해줘", ("소설", "문학")),
-    RecommendationCase("computer_network", "컴퓨터 네트워크 책 추천해줘", ("네트워크", "컴퓨터")),
-    RecommendationCase("database", "데이터베이스 책 추천해줘", ("데이터베이스", "database", "sql")),
-    RecommendationCase("design", "디자인 책 추천해줘", ("디자인", "design")),
-    RecommendationCase("marketing", "마케팅 책 추천해줘", ("마케팅", "marketing")),
-    RecommendationCase("statistics", "통계 책 추천해줘", ("통계", "statistics", "데이터")),
+    RecommendationCase("python_intro", "파이썬 입문 책 추천해줘", ("파이썬", "python"), ("000",)),
+    RecommendationCase("ai", "인공지능 책 추천해줘", ("인공지능", "ai", "머신러닝", "딥러닝"), ("000",)),
+    RecommendationCase("data_analysis", "데이터 분석 책 추천해줘", ("데이터", "분석", "통계"), ("000", "300")),
+    RecommendationCase("economics", "경제 책 추천해줘", ("경제", "금융", "경영"), ("300",)),
+    RecommendationCase("novel", "소설 책 추천해줘", ("소설", "문학"), ("800",), ("소설쓰기", "작법", "강의", "연구", "비평", "평론", "장르", "소설가 되기")),
+    RecommendationCase("computer_network", "컴퓨터 네트워크 책 추천해줘", ("네트워크", "컴퓨터"), ("000",)),
+    RecommendationCase("database", "데이터베이스 책 추천해줘", ("데이터베이스", "database", "sql"), ("000",)),
+    RecommendationCase("design", "디자인 책 추천해줘", ("디자인", "design"), ("600",)),
+    RecommendationCase("marketing", "마케팅 책 추천해줘", ("마케팅", "marketing"), ("300",)),
+    RecommendationCase("statistics", "통계 책 추천해줘", ("통계", "statistics", "데이터"), ("300",)),
 )
 
 
@@ -90,6 +92,7 @@ def evaluate_case(repository, case: RecommendationCase) -> RecommendationCaseRes
         _contains_any(text, case.expected_terms)
         for text in top_texts
     )
+    expected_kdc_found = _top_books_match_kdc(top_books, case.expected_kdc)
     excluded_term_absent = not any(
         _contains_any(text, case.excluded_terms)
         for text in top_texts
@@ -113,6 +116,8 @@ def evaluate_case(repository, case: RecommendationCase) -> RecommendationCaseRes
         failure_reasons.append("duplicate_top5")
     if not expected_term_found:
         failure_reasons.append("expected_term_not_found")
+    if not expected_kdc_found:
+        failure_reasons.append("expected_kdc_not_found")
     if not excluded_term_absent:
         failure_reasons.append("excluded_term_found")
     if not rank_reasons_present:
@@ -128,6 +133,7 @@ def evaluate_case(repository, case: RecommendationCase) -> RecommendationCaseRes
         recommendation_basis=basis,
         duplicate_free=duplicate_free,
         expected_term_found=expected_term_found,
+        expected_kdc_found=expected_kdc_found,
         excluded_term_absent=excluded_term_absent,
         rank_reasons_present=rank_reasons_present,
         top_titles=[book.title for book in top_books],
@@ -150,6 +156,20 @@ def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
 
 def _dedupe_key(text: str) -> str:
     return re.sub(r"[\W_]+", "", text.lower())
+
+
+def _top_books_match_kdc(top_books, expected_kdc: tuple[str, ...]) -> bool:
+    if not expected_kdc:
+        return True
+    kdcs = [_kdc_group(getattr(book, "holdingCallNo", None)) for book in top_books[:5]]
+    return any(kdc in expected_kdc for kdc in kdcs)
+
+
+def _kdc_group(call_no: str | None) -> str | None:
+    if not call_no:
+        return None
+    match = re.search(r"(\d)", call_no)
+    return f"{match.group(1)}00" if match else None
 
 
 if __name__ == "__main__":

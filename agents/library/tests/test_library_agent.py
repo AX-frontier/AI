@@ -1164,6 +1164,7 @@ def test_light_reading_recommendation_rewrites_literal_fun_keyword() -> None:
         "displayKeyword": "가볍게 읽을 만한 교양/소설/에세이",
         "searchQueries": ["교양", "소설", "에세이", "상식", "여행", "역사"],
         "mode": "light_reading",
+        "expectedKdc": ["800", "900"],
     }
 
 
@@ -1211,6 +1212,8 @@ def test_popular_recommendation_uses_aladin_bestseller_reference(monkeypatch) ->
     assert response.searchKeyword == "베스트셀러"
     assert response.matchedBooks[0].title == "알라딘 인기 소설"
     assert response.summary["queryInterpretation"]["mode"] == "popular"
+    assert "aladin_bestseller" in response.summary["recommendationBasis"]
+    assert response.summary["aladinReference"]["recommendationScope"] == "library_holdings_only"
 
 
 def test_generic_book_recommendation_returns_clarification() -> None:
@@ -1305,6 +1308,85 @@ def test_recommendation_ranking_uses_aladin_popularity_signal() -> None:
 
     assert ranked[0].book.id == 12
     assert "aladin_popularity" in ranked[0].basis
+
+
+def test_recommendation_ranking_boosts_expected_kdc() -> None:
+    books = [
+        BookRecord(
+            id=31,
+            bib_no="BIB-031",
+            reg_no="REG-031",
+            title="파이썬과 사회 변화",
+            publish_year=2024,
+            holding_call_no="331 ㅍ111ㅅ",
+            stack_location="사회과학자료실",
+            stack_shelf="1-A-1-a",
+        ),
+        BookRecord(
+            id=32,
+            bib_no="BIB-032",
+            reg_no="REG-032",
+            title="파이썬 프로그래밍 입문",
+            publish_year=2018,
+            holding_call_no="005.133 ㅍ222ㅍ",
+            stack_location="Design&IT정보센터",
+            stack_shelf="2-A-1-a",
+        ),
+    ]
+
+    class EmptyPopularityClient:
+        def enrich(self, books):
+            return {}
+
+    ranked = rank_book_recommendations(
+        "파이썬",
+        books,
+        aladin_client=EmptyPopularityClient(),
+        expected_kdc=("000",),
+    )
+
+    assert ranked[0].book.id == 32
+    assert "kdc_boost" in ranked[0].basis
+
+
+def test_fiction_reading_recommendation_prefers_works_over_study_books() -> None:
+    books = [
+        BookRecord(
+            id=41,
+            bib_no="BIB-041",
+            reg_no="REG-041",
+            title="한국 고소설 강의",
+            publish_year=2024,
+            holding_call_no="810.9 ㄱ111ㅎ",
+            stack_location="어문학자료실",
+            stack_shelf="1-A-1-a",
+        ),
+        BookRecord(
+            id=42,
+            bib_no="BIB-042",
+            reg_no="REG-042",
+            title="어느 사형에 관한 기록 :단야 쿠카프카 장편소설",
+            publish_year=2022,
+            holding_call_no="843 ㅋ222ㅇ",
+            stack_location="어문학자료실",
+            stack_shelf="2-A-1-a",
+        ),
+    ]
+
+    class EmptyPopularityClient:
+        def enrich(self, books):
+            return {}
+
+    ranked = rank_book_recommendations(
+        "장편소설 소설집 한국소설 세계문학 소설",
+        books,
+        aladin_client=EmptyPopularityClient(),
+        expected_kdc=("800",),
+        recommendation_mode="fiction_reading",
+    )
+
+    assert ranked[0].book.id == 42
+    assert "fiction_reading" in ranked[0].basis
 
 
 def test_recommendation_ranking_dedupes_same_book_holdings() -> None:

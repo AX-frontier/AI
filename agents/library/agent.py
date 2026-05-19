@@ -116,6 +116,8 @@ def run_library_agent(
                 ranking_keyword,
                 books.books,
                 aladin_weight=_recommendation_aladin_weight(recommendation_query),
+                expected_kdc=_recommendation_expected_kdc(recommendation_query),
+                recommendation_mode=_recommendation_mode(recommendation_query),
             )
             books = BookSearchResult(books.keyword, [item.book for item in ranked])
             summary = build_recommendation_summary(
@@ -125,6 +127,7 @@ def run_library_agent(
                 ),
                 includeSemantic=_recommendation_uses_semantic(recommendation_query),
                 queryInterpretation=_query_interpretation_summary(recommendation_query),
+                aladinReference=_aladin_reference_summary(recommendation_query),
             )
             response = build_book_response(
                 classification.intent,
@@ -264,6 +267,8 @@ def run_library_agent_stream(
                 ranking_keyword,
                 books.books,
                 aladin_weight=_recommendation_aladin_weight(recommendation_query),
+                expected_kdc=_recommendation_expected_kdc(recommendation_query),
+                recommendation_mode=_recommendation_mode(recommendation_query),
             )
             books = BookSearchResult(books.keyword, [item.book for item in ranked])
             summary = build_recommendation_summary(
@@ -273,6 +278,7 @@ def run_library_agent_stream(
                 ),
                 includeSemantic=_recommendation_uses_semantic(recommendation_query),
                 queryInterpretation=_query_interpretation_summary(recommendation_query),
+                aladinReference=_aladin_reference_summary(recommendation_query),
             )
             response = build_book_response(
                 classification.intent,
@@ -574,6 +580,19 @@ def _query_interpretation_summary(
         "displayKeyword": recommendation_query.display_keyword,
         "searchQueries": list(recommendation_query.search_queries),
         "mode": recommendation_query.mode,
+        "expectedKdc": list(recommendation_query.expected_kdc),
+    }
+
+
+def _aladin_reference_summary(
+    recommendation_query: RecommendationQuery | None,
+) -> dict | None:
+    if recommendation_query is None or recommendation_query.mode != "popular":
+        return None
+    return {
+        "source": "aladin_bestseller",
+        "matchingPolicy": "알라딘 베스트셀러 목록을 조회한 뒤 ISBN/제목으로 library.books 소장 도서와 대조합니다.",
+        "recommendationScope": "library_holdings_only",
     }
 
 
@@ -587,6 +606,22 @@ def _recommendation_aladin_weight(
     if recommendation_query.mode == "light_reading":
         return 1.35
     return 1.0
+
+
+def _recommendation_expected_kdc(
+    recommendation_query: RecommendationQuery | None,
+) -> tuple[str, ...]:
+    if recommendation_query is None:
+        return ()
+    return recommendation_query.expected_kdc
+
+
+def _recommendation_mode(
+    recommendation_query: RecommendationQuery | None,
+) -> str | None:
+    if recommendation_query is None:
+        return None
+    return recommendation_query.mode
 
 
 def _recommendation_uses_semantic(
