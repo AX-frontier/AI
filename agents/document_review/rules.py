@@ -352,12 +352,12 @@ def review_rules(
     findings.extend(_review_document_level(lines))
     findings.extend(_review_single_item_sections(lines))
     findings.extend(_review_item_marker_styles(lines))
+    findings.extend(_review_item_marker_indentation(lines))
     findings.extend(_review_declared_amount_against_tables(lines, tables))
     checks.extend(_review_related_documents(lines))
     checks.extend(_review_law_references(lines))
     checks.extend(_review_budget_tables(lines, tables))
     checks.extend(_review_attachment_list(lines))
-    checks.extend(_review_item_marker_hierarchy(lines))
     format_notices = [
         FormatNoticeItem(
             category="서식",
@@ -367,16 +367,6 @@ def review_rules(
             ),
         )
     ]
-    if _has_nested_items(lines):
-        format_notices.append(
-            FormatNoticeItem(
-                category="항목 번호 체계",
-                message=(
-                    "하위 항목 들여쓰기와 두 줄 이상 항목의 둘째 줄 정렬은 텍스트만으로 자동 판정하기 어렵습니다. "
-                    "전자결재 화면에서 상위 항목보다 2타씩 들여쓰기 되었는지 확인해 주세요."
-                ),
-            )
-        )
     return findings, checks, format_notices
 
 
@@ -630,6 +620,42 @@ def _review_item_marker_hierarchy(lines: list[DocumentLine]) -> list[CheckRequir
     return checks
 
 
+def _review_item_marker_indentation(lines: list[DocumentLine]) -> list[RuleFinding]:
+    body_lines = _body_lines_before_attachments(lines)
+    items = [_parse_item_marker(line) for line in body_lines]
+    parsed_items = [item for item in items if item is not None]
+    if len(parsed_items) < 2:
+        return []
+
+    expected_by_indent = _expected_item_styles_by_indent(parsed_items)
+    findings: list[RuleFinding] = []
+    for index, item in enumerate(parsed_items):
+        expected_style = _expected_item_style(parsed_items, index, item, expected_by_indent)
+        if item.style != expected_style:
+            continue
+        expected_indent_width = _expected_indent_width_for_style(item.style)
+        if item.indent_width == expected_indent_width:
+            continue
+        content_without_indent = re.sub(r"^[ \t\u00a0\u3000]+", "", item.line.text)
+        suggested_line = f"{' ' * expected_indent_width}{content_without_indent}"
+        if suggested_line == item.line.text:
+            continue
+        findings.append(
+            RuleFinding(
+                rule_code="ITEM_INDENTATION",
+                category="항목 번호 체계",
+                severity="LOW",
+                status="REVISION_REQUIRED",
+                line_start=item.line.number,
+                line_end=item.line.number,
+                original_text=item.line.text,
+                suggested_text=suggested_line,
+                reason="하위 항목은 위 항목보다 2타씩 오른쪽에서 시작해야 합니다.",
+            )
+        )
+    return findings
+
+
 def _review_item_marker_styles(lines: list[DocumentLine]) -> list[RuleFinding]:
     body_lines = _body_lines_before_attachments(lines)
     items = [_parse_item_marker(line) for line in body_lines]
@@ -637,17 +663,10 @@ def _review_item_marker_styles(lines: list[DocumentLine]) -> list[RuleFinding]:
     if len(parsed_items) < 2:
         return []
 
-    indent_levels = sorted({item.indent_width for item in parsed_items})
-    expected_by_indent = {
-        indent: ITEM_STYLE_ORDER[min(index, len(ITEM_STYLE_ORDER) - 1)]
-        for index, indent in enumerate(indent_levels)
-    }
+    expected_by_indent = _expected_item_styles_by_indent(parsed_items)
     findings: list[RuleFinding] = []
     for index, item in enumerate(parsed_items):
-        expected_style = expected_by_indent[item.indent_width]
-        sequence_style = _expected_style_from_previous_sequence(parsed_items[:index], item)
-        if sequence_style is not None:
-            expected_style = sequence_style
+        expected_style = _expected_item_style(parsed_items, index, item, expected_by_indent)
         if item.style == expected_style:
             continue
         suggested_line = _replace_item_marker(item.line.text, item.marker, expected_style)
@@ -689,6 +708,59 @@ def _body_lines_before_attachments(lines: list[DocumentLine]) -> list[DocumentLi
     return body_lines
 
 
+def _expected_item_styles_by_indent(parsed_items: list[ParsedItemMarker]) -> dict[int, str]:
+    indent_levels = sorted({item.indent_width for item in parsed_items})
+    return {
+        indent: ITEM_STYLE_ORDER[min(index, len(ITEM_STYLE_ORDER) - 1)]
+        for index, indent in enumerate(indent_levels)
+    }
+
+
+def _expected_item_style(
+    parsed_items: list[ParsedItemMarker],
+    index: int,
+    item: ParsedItemMarker,
+    expected_by_indent: dict[int, str],
+) -> str:
+    indent_style = expected_by_indent[item.indent_width]
+    if item.style == indent_style:
+        return item.style
+
+    sequence_style = _expected_style_from_previous_sequence(parsed_items[:index], item)
+    if sequence_style is not None:
+        return sequence_style
+
+    contextual_style = _expected_style_from_parent_context(parsed_items[:index], item)
+    if contextual_style is not None:
+        return contextual_style
+
+    return indent_style
+
+
+def _expected_style_from_parent_context(
+    previous_items: list[ParsedItemMarker],
+    item: ParsedItemMarker,
+) -> str | None:
+    try:
+        style_index = ITEM_STYLE_ORDER.index(item.style)
+    except ValueError:
+        return None
+    if style_index == 0:
+        return None
+
+    parent_style = ITEM_STYLE_ORDER[style_index - 1]
+    if any(previous.style == parent_style for previous in previous_items):
+        return item.style
+    return None
+
+
+def _expected_indent_width_for_style(style: str) -> int:
+    try:
+        return ITEM_STYLE_ORDER.index(style) * 2
+    except ValueError:
+        return 0
+
+
 def _expected_style_from_previous_sequence(
     previous_items: list[ParsedItemMarker],
     item: ParsedItemMarker,
@@ -703,7 +775,9 @@ def _expected_style_from_previous_sequence(
         if previous_value is None or previous_kind != item_kind:
             continue
         if previous_value == item_value - 1:
-            return previous.style if previous.style.endswith("_dot") else None
+            return previous.style
+        if previous_value < item_value and previous.style.endswith("_dot") and not item.style.endswith("_dot"):
+            return previous.style
         return None
     return None
 
@@ -1191,11 +1265,10 @@ def _review_budget_tables(lines: list[DocumentLine], tables: list[ExtractedTable
 
     required_labels = {
         "회계연도": ("회계연도", "회계 연도"),
-        "회계구분": ("회계구분", "회계 구분", "예산구분", "예산 구분"),
+        "회계구분": ("회계구분", "회계 구분"),
         "세목": ("세목",),
         "세목코드": ("세목코드", "세목 코드"),
         "소요예산": ("소요예산", "소요 예산"),
-        "합계": ("합계", "총계"),
     }
     checks: list[CheckRequiredItem] = []
     for table in candidate_tables:
@@ -1205,6 +1278,8 @@ def _review_budget_tables(lines: list[DocumentLine], tables: list[ExtractedTable
             for label, aliases in required_labels.items()
             if not any(alias in flattened for alias in aliases)
         ]
+        if _budget_requires_total_row(table) and not _has_total_row(table):
+            missing.append("합계")
         if missing:
             checks.append(
                 CheckRequiredItem(
@@ -1253,7 +1328,7 @@ def review_table_checks(text: str, tables: list[ExtractedTable] | None = None) -
                 severity="MEDIUM",
                 status="CHECK_REQUIRED",
                 message="소요예산 표 구조가 HTML 표로 인식되지 않았습니다.",
-                suggestion="원본 전자결재/HWP 표에서 회계연도, 예산구분, 세목, 세목코드, 소요예산 항목을 직접 확인해 주세요.",
+                suggestion="원본 전자결재/HWP 표에서 회계연도, 회계구분, 세목, 세목코드, 소요예산 항목을 직접 확인해 주세요.",
                 evidence={"declaredAmount": declared_amount},
             )
         )
@@ -1342,10 +1417,20 @@ def _review_budget_amount_table(
 ) -> list[TableCheckItem]:
     checks: list[TableCheckItem] = []
     flattened = _flatten_table(table)
-    required_headers = ("회계연도", "세목", "세목코드", "소요예산", "합계")
-    missing_headers = [header for header in required_headers if header not in flattened]
-    if "예산구분" not in flattened and "회계구분" not in flattened:
-        missing_headers.append("예산구분")
+    required_labels = {
+        "회계연도": ("회계연도", "회계 연도"),
+        "회계구분": ("회계구분", "회계 구분"),
+        "세목": ("세목",),
+        "세목코드": ("세목코드", "세목 코드"),
+        "소요예산": ("소요예산", "소요 예산"),
+    }
+    missing_headers = [
+        label
+        for label, aliases in required_labels.items()
+        if not any(alias in flattened for alias in aliases)
+    ]
+    if _budget_requires_total_row(table) and not _has_total_row(table):
+        missing_headers.append("합계")
     if missing_headers:
         checks.append(
             TableCheckItem(
@@ -1427,7 +1512,7 @@ def _find_budget_amount_table(tables: list[ExtractedTable]) -> ExtractedTable | 
                 or "회계구분" in flattened
             )
         )
-        if has_budget_identity and _extract_budget_table_amount(table) is not None:
+        if has_budget_identity:
             return table
     return None
 
@@ -1515,15 +1600,58 @@ def _trusted_table_reference_amount(tables: list[ExtractedTable]) -> int | None:
 
 
 def _extract_budget_table_amount(table: ExtractedTable) -> int | None:
-    total_amount = _extract_total_row_amount(table)
-    if total_amount is not None:
-        return total_amount
-    for row in table.rows[1:] if len(table.rows) > 1 else table.rows:
-        amounts = [_parse_amount(cell) for cell in row]
-        values = [amount for amount in amounts if amount is not None]
-        if values:
-            return values[-1]
+    amount_column_index = _budget_amount_column_index(table)
+    if amount_column_index is None:
+        return None
+
+    for row in table.rows:
+        normalized_row = _normalize_label_text(" ".join(row))
+        if "합계" not in normalized_row and "총계" not in normalized_row:
+            continue
+        amount = _parse_amount(row[amount_column_index]) if amount_column_index < len(row) else None
+        if amount is not None:
+            return amount
+
+    for row in _budget_data_rows(table):
+        amount = _parse_amount(row[amount_column_index]) if amount_column_index < len(row) else None
+        if amount is not None:
+            return amount
     return None
+
+
+def _budget_amount_column_index(table: ExtractedTable) -> int | None:
+    for row in table.rows:
+        for index, cell in enumerate(row):
+            label = _normalize_label_text(cell)
+            if "소요예산" in label:
+                return index
+    return None
+
+
+def _budget_data_rows(table: ExtractedTable) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for row in table.rows:
+        normalized_row = _normalize_label_text(" ".join(row))
+        if not normalized_row:
+            continue
+        if any(header in normalized_row for header in ("회계연도", "회계구분", "예산구분", "세목코드", "소요예산")):
+            continue
+        if "합계" in normalized_row or "총계" in normalized_row:
+            continue
+        rows.append(row)
+    return rows
+
+
+def _budget_requires_total_row(table: ExtractedTable) -> bool:
+    return len(_budget_data_rows(table)) > 1
+
+
+def _has_total_row(table: ExtractedTable) -> bool:
+    for row in table.rows:
+        normalized_row = _normalize_label_text(" ".join(row))
+        if "합계" in normalized_row or "총계" in normalized_row:
+            return True
+    return False
 
 
 def _parse_amount(value: str | None) -> int | None:
@@ -1628,15 +1756,6 @@ def _review_attachment_list(lines: list[DocumentLine]) -> list[CheckRequiredItem
                 message="붙임이 있는 문서는 마지막 붙임 항목 뒤에 끝표시를 했는지 확인해야 합니다.",
                 original_text=last.text.strip(),
                 line_start=last.number,
-            )
-        )
-    if attachment_lines:
-        checks.append(
-            CheckRequiredItem(
-                category="붙임 표시",
-                message="붙임파일명과 실제 첨부파일명이 서로 일치하는지 확인해야 합니다.",
-                original_text=attachment_lines[0].text.strip(),
-                line_start=attachment_lines[0].number,
             )
         )
     return checks

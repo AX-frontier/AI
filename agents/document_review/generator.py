@@ -26,6 +26,7 @@ RULE_CRITERION_MAP = {
     "ATTACHMENT_LABEL": "붙임 표시",
     "ITEM_SPACING": "항목 번호 체계",
     "ITEM_MARKER_STYLE": "항목 번호 체계",
+    "ITEM_INDENTATION": "항목 번호 체계",
     "SINGLE_ITEM_NUMBERING": "항목 번호 체계",
     "DECLARED_AMOUNT_MISMATCH": "금액 표기",
 }

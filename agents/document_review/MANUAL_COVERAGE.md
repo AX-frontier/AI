@@ -15,7 +15,8 @@
 | 숫자는 특별한 사유가 없으면 아라비아 숫자 | `두 건`, `열 명`처럼 한글 수사와 단위가 분리된 표현을 확인 필요로 표시 | `_review_basic_principles` |
 | 항목 기호 순서 `1. → 가. → 1) → 가) → (1) → (가) → ① → ㉮` | 자동 수정 제안 | `_review_item_marker_styles` |
 | 항목 기호와 내용 사이 1타 | 자동 수정 제안 | `_review_item_spacing` |
-| 하위 항목 2타 들여쓰기, 두 줄 이상 둘째 줄 정렬 | 텍스트 복붙 한계로 서식 확인 필요 | `_review_item_marker_hierarchy`, `format_notices` |
+| 하위 항목 2타 들여쓰기 | 자동 수정 | `_review_item_marker_indentation` |
+| 두 줄 이상 항목의 둘째 줄 정렬 | 텍스트 복붙 한계로 MVP 제외 | - |
 | 항목이 하나뿐이면 항목기호 미부여 | 확인 필요 | `_review_single_item_sections` |
 | `재가하여 주시기 바랍니다.` 표현 | 문맥 키워드 기준 자동 수정 제안 | `_review_approval_phrase` |
 | 날짜 `yyyy. m. d.` 및 0 미표기 | 자동 수정 제안 | `_review_hyphen_dates`, `_review_dot_dates` |
@@ -29,7 +30,7 @@
 | 타기관 문서는 기관명 포함 | 문맥 확정 불가. 관련문서 형식 확인 항목에 포함 | `_review_related_documents` |
 | 법령명은 홑낫표, 조문 번호/조문명 표시 | 확인 필요 | `_review_law_references` |
 | 예산 사용 문서에는 소요예산 표 필요 | 확인 필요 | `_review_budget_tables` |
-| 소요예산 표 필수 열: 회계연도, 회계구분/예산구분, 세목, 세목코드, 소요예산, 합계 | 확인 필요 및 표 검토 | `_review_budget_tables`, `_review_budget_amount_table` |
+| 소요예산 표 필수 열: 회계연도, 회계구분, 세목, 세목코드, 소요예산, 합계 | 확인 필요 및 표 검토. 단일 예산 행만 있는 표는 합계 생략 허용 | `_review_budget_tables`, `_review_budget_amount_table` |
 | 세목코드 2개 이상이면 산출근거/예산승인 기준 분리 | 사실관계 확인 필요. 표 검토 코멘트로 안내 | `_review_budget_tables` |
 | 끝표시는 마지막 글자 뒤 2타 후 `끝.` | 자동 수정 제안 | `_review_end_marker_spacing` |
 | 마침표 없이 끝나면 마침표 후 2타 `끝.` | 자동 수정 제안 | `_review_end_marker_spacing` |
@@ -37,7 +38,7 @@
 | 첨부파일은 `붙임`으로 표시 | 자동 수정 제안 | `_review_attachment_spacing` |
 | `붙임` 뒤 2타, 파일명, 부수, 마침표 | 자동 수정 제안 및 확인 필요 | `_review_attachment_spacing`, `_review_attachment_list` |
 | 두 번째 붙임부터 `붙임` 반복 금지 | 확인 필요 | `_review_attachment_list` |
-| 붙임 파일명과 실제 첨부파일명 일치 | 확인 필요 | `_review_attachment_list` |
+| 붙임 파일명과 실제 첨부파일명 일치 | 실제 첨부파일 목록을 받지 않으므로 자동 검토 제외 | - |
 | 글꼴 굴림 11pt, 줄간격 180% | 텍스트 복붙으로 확정 불가. 서식 참고로 안내 | `format_notices` |
 | 표 내용 검토 | 표는 자동 수정하지 않고 별도 검토 카드로 반환 | `review_table_checks` |
 
