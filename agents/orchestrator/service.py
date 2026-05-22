@@ -648,6 +648,13 @@ def stream_orchestrator_chat(
     yield _sse_event({'type': 'routing', 'targetAgent': route_result.targetAgent, 'intent': route_result.intent, 'routingMode': route_result.routingMode, 'routingReasonCode': route_result.routingReasonCode})
 
     if route_result.targetAgent == "MAIN":
+        from agents.main_agent.page_navigation import build_page_navigation_response
+
+        page_navigation_response = build_page_navigation_response(resolved_message)
+        if page_navigation_response is not None:
+            yield _sse_event({'type': 'done', **page_navigation_response.model_dump()})
+            return
+
         precheck_response = run_main_agent(
             MainChatRequest(
                 queryUid=request.queryUid,

@@ -35,6 +35,29 @@ class RecordingLLMClient:
         return self.answer
 
 
+def test_main_agent_handles_known_page_navigation_without_vector_search() -> None:
+    repository = MockChunkRepository([])
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_page_001",
+            traceId="tr_page_001",
+            conversationUid="conv_page_001",
+            message="학정관 페이지로 이동해줘",
+        ),
+        repository=repository,
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=MockLLMClient(),
+    )
+
+    assert response.targetAgent == "MAIN"
+    assert response.fallbackUsed is False
+    assert response.resultCount == 1
+    assert "학술정보관 페이지" in response.answer
+    assert "https://hsel.hansung.ac.kr/" in response.answer
+    assert response.sources[0].url == "https://hsel.hansung.ac.kr/"
+    assert repository.last_embedding is None
+
+
 def test_main_agent_builds_answer_with_sources() -> None:
     repository = MockChunkRepository(
         [

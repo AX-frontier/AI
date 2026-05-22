@@ -235,6 +235,35 @@ def test_orchestrator_route_endpoint_prefers_library_for_library_hours_query() -
     assert payload["targetAgent"] == "LIBRARY"
 
 
+def test_orchestrator_route_endpoint_sends_known_page_navigation_to_main() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.2, reason="weak main"),
+            library=AgentEvidence(score=0.95, reason="strong library keyword"),
+            document_review=AgentEvidence(score=0.0, reason="no document hit"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/route",
+        json={
+            "queryUid": "q_page_nav_001",
+            "traceId": "tr_page_nav_001",
+            "conversationUid": "conv_page_nav_001",
+            "message": "학술정보관 페이지로 이동해줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "MAIN"
+    assert payload["intent"] == "MAIN"
+
+
 def test_orchestrator_route_endpoint_routes_main_when_library_domain_terms_are_absent() -> None:
     _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
