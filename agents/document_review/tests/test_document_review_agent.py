@@ -143,13 +143,14 @@ def test_document_review_agent_checks_item_marker_hierarchy() -> None:
         "  끝."
     )
 
-    hierarchy_checks = [item for item in checks if item.category == "항목 번호 체계"]
     marker_findings = [item for item in findings if item.rule_code == "ITEM_MARKER_STYLE"]
+    indent_findings = [item for item in findings if item.rule_code == "ITEM_INDENTATION"]
 
     assert marker_findings
     assert any(item.original_text == "1) 학술정보팀 수입을 정산합니다." and item.suggested_text == "1. 학술정보팀 수입을 정산합니다." for item in marker_findings)
     assert any(item.original_text == "다) 정산 금액" and item.suggested_text == "다. 정산 금액" for item in marker_findings)
-    assert any("2타씩 오른쪽" in item.message for item in hierarchy_checks)
+    assert indent_findings
+    assert all("2타씩 오른쪽" in item.reason for item in indent_findings)
 
 
 def test_document_review_agent_accepts_manual_item_marker_order() -> None:
@@ -164,6 +165,26 @@ def test_document_review_agent_accepts_manual_item_marker_order() -> None:
     )
 
     assert all(item.category != "항목 번호 체계" for item in checks)
+
+
+def test_document_review_agent_keeps_korean_dot_marker_and_fixes_only_indent() -> None:
+    findings, _, _ = review_rules(
+        "1. 학술정보팀 수입을 정산합니다.\n"
+        "2. 수입 정산 내용\n"
+        "가. 정산 대상: 도서 연체료 문서 출력료, 연회비\n"
+        "나. 정산 기간: 2026년 4월분\n"
+        "다. 정산 금액: 금169,320원(금이십육만구천삼백이십원)\n"
+        "라. 상세 내역\n"
+        "붙임  1. 도서 연체료 1부.  끝."
+    )
+
+    marker_findings = [item for item in findings if item.rule_code == "ITEM_MARKER_STYLE"]
+    indent_findings = [item for item in findings if item.rule_code == "ITEM_INDENTATION"]
+
+    assert not any(item.original_text.startswith("가.") and item.suggested_text.startswith("1.") for item in marker_findings)
+    assert not any(item.original_text.startswith("나.") and item.suggested_text.startswith("2.") for item in marker_findings)
+    assert any(item.original_text.startswith("가.") and item.suggested_text.startswith("  가.") for item in indent_findings)
+    assert any(item.original_text.startswith("나.") and item.suggested_text.startswith("  나.") for item in indent_findings)
 
 
 def test_document_review_agent_suggests_attachment_label_as_butim() -> None:
@@ -441,7 +462,7 @@ def test_document_review_agent_checks_attachment_list_completion() -> None:
     assert any("부수를 적고 마침표" in message for message in messages)
     assert any("두 번째 붙임부터" in message for message in messages)
     assert any("마지막 붙임 항목 뒤에 끝표시" in message for message in messages)
-    assert any("실제 첨부파일명" in message for message in messages)
+    assert all("실제 첨부파일명" not in message for message in messages)
 
 
 def test_document_review_agent_does_not_infer_budget_table_from_keyword_only() -> None:
@@ -467,10 +488,10 @@ def test_document_review_agent_extracts_html_tables() -> None:
         conversationUid="00000000-0000-0000-0000-000000000003",
         message="전자결재 문서를 검토해줘",
         document=ReviewDocument(
-            bodyText="소요예산\n회계연도 예산구분 세목 세목코드 소요예산\n  끝.",
+            bodyText="소요예산\n회계연도 회계구분 세목 세목코드 소요예산\n  끝.",
             bodyHtml=(
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
                 "</table>"
@@ -481,7 +502,7 @@ def test_document_review_agent_extracts_html_tables() -> None:
     response = run_document_review_agent(request)
 
     assert len(response.extractedTables) == 1
-    assert response.extractedTables[0].rows[0] == ["회계연도", "예산구분", "세목", "세목코드", "소요예산"]
+    assert response.extractedTables[0].rows[0] == ["회계연도", "회계구분", "세목", "세목코드", "소요예산"]
 
 
 def test_document_review_agent_checks_related_document_and_law_reference() -> None:
@@ -516,7 +537,7 @@ def test_document_review_agent_checks_budget_table_required_columns_from_html() 
             bodyText="마. 소요예산\n  끝.",
             bodyHtml=(
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>254,400</td></tr>"
                 "</table>"
             ),
@@ -528,6 +549,30 @@ def test_document_review_agent_checks_budget_table_required_columns_from_html() 
     budget_checks = [item for item in response.checkRequiredItems if item.category == "소요예산 표시"]
     assert budget_checks
     assert "세목코드" in budget_checks[0].message
+
+
+def test_document_review_agent_flags_wrong_budget_table_header_names() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000001",
+        traceId="00000000-0000-0000-0000-000000000002",
+        conversationUid="00000000-0000-0000-0000-000000000003",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText="마. 소요예산\n  끝.",
+            bodyHtml=(
+                "<table>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>돈</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    messages = [item.message for item in response.checkRequiredItems]
+    assert any("회계구분" in message and "소요예산" in message for message in messages)
+    assert all("합계" not in message for message in messages)
 
 
 def test_document_review_agent_returns_table_checks_for_amount_mismatch() -> None:
@@ -553,7 +598,7 @@ def test_document_review_agent_returns_table_checks_for_amount_mismatch() -> Non
                 "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
                 "</table>"
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
                 "</table>"
@@ -593,7 +638,7 @@ def test_document_review_agent_skips_clean_table_checks() -> None:
                 "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
                 "</table>"
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
                 "</table>"
@@ -629,7 +674,7 @@ def test_document_review_agent_sums_detail_amount_column_aligned_with_total() ->
                 "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
                 "</table>"
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
                 "</table>"
@@ -640,6 +685,42 @@ def test_document_review_agent_sums_detail_amount_column_aligned_with_total() ->
     response = run_document_review_agent(request)
 
     assert response.tableChecks == []
+
+
+def test_document_review_agent_sums_detail_amount_column_from_colspan_total_row() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000041",
+        traceId="00000000-0000-0000-0000-000000000042",
+        conversationUid="00000000-0000-0000-0000-000000000043",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "학술정보팀 수입 정산\n"
+                "다. 정산 금액: 금254,400원\n"
+                "라. 상세 내역\n"
+                "마. 소요예산\n"
+                "  끝."
+            ),
+            bodyHtml=(
+                "<table>"
+                "<tr><td>구분</td><td>건수</td><td colspan=\"2\">금액(원)</td><td>비고</td></tr>"
+                "<tr><td>도서 연체료</td><td>180</td><td>192,400</td><td>192,400</td><td rowspan=\"2\">1권 1일당 100원</td></tr>"
+                "<tr><td>문서 출력료</td><td>5</td><td>50,000</td><td>60,000</td></tr>"
+                "<tr><td>연회비</td><td>2</td><td>2,000</td><td>2,000</td><td>1년 10,000원</td></tr>"
+                "<tr><td colspan=\"3\">합계</td><td>254,400</td><td></td></tr>"
+                "</table>"
+                "<table>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "</table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert response.tableChecks == []
+    assert all("187원" not in item.message for item in response.tableChecks)
 
 
 def test_document_review_agent_suggests_declared_amount_from_trusted_table_total() -> None:
@@ -666,7 +747,7 @@ def test_document_review_agent_suggests_declared_amount_from_trusted_table_total
                 "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
                 "</table>"
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "</table>"
             ),
@@ -704,7 +785,7 @@ def test_document_review_agent_applies_declared_amount_when_html_text_is_split()
                 "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
                 "</table>"
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "</table>"
             ),
@@ -774,7 +855,7 @@ def test_document_review_agent_declared_amount_html_rewrite_skips_protected_tabl
                 "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
                 "</table>"
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "</table>"
             ),
@@ -788,7 +869,7 @@ def test_document_review_agent_declared_amount_html_rewrite_skips_protected_tabl
     assert "<td>금169,320원</td>" in html
 
 
-def test_document_review_agent_flags_budget_header_without_treating_table_as_missing() -> None:
+def test_document_review_agent_flags_malformed_budget_table_without_treating_table_as_missing() -> None:
     request = DocumentReviewRequest(
         queryUid="00000000-0000-0000-0000-000000000034",
         traceId="00000000-0000-0000-0000-000000000035",
@@ -821,8 +902,8 @@ def test_document_review_agent_flags_budget_header_without_treating_table_as_mis
     response = run_document_review_agent(request)
 
     messages = [item.message for item in response.tableChecks]
-    assert any("소요예산 표 필수 항목 확인이 필요합니다" in message for message in messages)
-    assert any("소요예산" in message for message in messages)
+    assert any("회계구분" in message and "소요예산" in message for message in messages)
+    assert all("합계" not in message for message in messages)
     assert all("표 구조가 HTML 표로 인식되지 않았습니다" not in message for message in messages)
 
 
@@ -887,7 +968,7 @@ def test_document_review_agent_uses_declared_settlement_amount_not_other_amounts
                 "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
                 "</table>"
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
                 "</table>"
@@ -915,7 +996,7 @@ def test_document_review_agent_ignores_one_won_table_difference() -> None:
                 "<tr><td>합계</td><td></td><td></td><td>254,400</td><td></td></tr>"
                 "</table>"
                 "<table>"
-                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
+                "<tr><td>회계연도</td><td>회계구분</td><td>세목</td><td>세목코드</td><td>소요예산</td></tr>"
                 "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
                 "<tr><td>합계</td><td></td><td></td><td></td><td>254,400</td></tr>"
                 "</table>"
