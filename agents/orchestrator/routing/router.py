@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from agents.orchestrator.api.schemas import TargetAgent
 from agents.orchestrator.routing.evidence import RoutingEvidence
+from agents.main_agent.page_navigation import is_page_navigation_request
 
 DOCUMENT_REVIEW_THRESHOLD = 0.70
 LIBRARY_THRESHOLD = 0.65
@@ -39,6 +40,22 @@ class EvidenceBasedRouter:
     """
 
     def route(self, evidence: RoutingEvidence, message: str = "") -> RouteDecision:
+        if is_page_navigation_request(message):
+            raw_scores = _raw_scores(evidence)
+            return _decision_for(
+                "MAIN",
+                evidence,
+                _compose_reason(
+                    "known page navigation request selected MAIN",
+                    raw_scores,
+                    {"MAIN": 0.0, "LIBRARY": 0.0, "DOCUMENT_REVIEW": 0.0, "CAMPUS_MAP": 0.0},
+                    raw_scores,
+                ),
+                raw_scores=raw_scores,
+                rule_adjustments={"MAIN": 0.0, "LIBRARY": 0.0, "DOCUMENT_REVIEW": 0.0, "CAMPUS_MAP": 0.0},
+                final_scores=raw_scores,
+            )
+
         if evidence.document_review.score >= 0.85:
             return _decision_for(
                 "DOCUMENT_REVIEW",
