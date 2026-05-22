@@ -21,14 +21,17 @@ RULE_CRITERION_MAP = {
     "TILDE_SPACING": "문장부호와 기호",
     "COLON_SPACING": "문장부호와 기호",
     "ENDING_EXPRESSION": "문장 종결 표현",
+    "RESULT_DELIVERY_PHRASE": "문장 종결 표현",
     "END_MARKER": "끝표시",
     "ATTACHMENT_SPACING": "붙임 표시",
     "ATTACHMENT_LABEL": "붙임 표시",
     "ITEM_SPACING": "항목 번호 체계",
     "ITEM_MARKER_STYLE": "항목 번호 체계",
+    "ITEM_MARKER_SEQUENCE": "항목 번호 체계",
     "ITEM_INDENTATION": "항목 번호 체계",
     "SINGLE_ITEM_NUMBERING": "항목 번호 체계",
     "DECLARED_AMOUNT_MISMATCH": "금액 표기",
+    "BUDGET_TABLE_HEADER": "소요예산 표시",
 }
 
 CRITERIA = (

@@ -6,6 +6,20 @@ from agents.document_review.models import RuleFinding
 from agents.document_review.rules import apply_safe_suggestions_to_html, review_rules
 
 
+class StubLLMClient:
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.prompts: list[str] = []
+
+    def generate(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.response
+
+    def generate_stream(self, prompt: str):
+        self.prompts.append(prompt)
+        yield self.response
+
+
 def test_document_review_agent_suggests_prompt_rule_revisions() -> None:
     request = DocumentReviewRequest(
         queryUid="00000000-0000-0000-0000-000000000001",
@@ -59,6 +73,72 @@ def test_document_review_agent_accepts_spring_current_message_only_shape() -> No
     assert response.fallbackUsed is False
     assert response.confidence == 0.55
     assert "전용 문서 본문 필드가 없어" in response.answer
+
+
+def test_document_review_agent_suggests_result_delivery_phrase() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000001",
+        traceId="00000000-0000-0000-0000-000000000002",
+        conversationUid="00000000-0000-0000-0000-000000000003",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            title="검토 결과 송부",
+            docType="OFFICIAL_DOCUMENT",
+            bodyText=(
+                "한성대학교 한성디지털사진아카이브 소장 사진자료 제공 및 사용허가\n\n"
+                "1. 관련: 성한사진박물관 자료팀-118(2026. 4. 25.)\n"
+                "2. 위 호와 관련하여 성한사진박물관에서 요청한 사진 자료와 자료 활용 허가에 대한 검토 결과입니다.\n\n"
+                "붙임  1. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝."
+            ),
+            bodyHtml=(
+                "<p>한성대학교 한성디지털사진아카이브 소장 사진자료 제공 및 사용허가</p>"
+                "<p>1. 관련: 성한사진박물관 자료팀-118(2026. 4. 25.)</p>"
+                "<p>2. 위 호와 관련하여 성한사진박물관에서 요청한 사진 자료와 자료 활용 허가에 대한 검토 결과입니다.</p>"
+                "<p>붙임  1. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝.</p>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    result_findings = [finding for finding in response.findings if finding.ruleCode == "RESULT_DELIVERY_PHRASE"]
+    assert len(result_findings) == 1
+    assert result_findings[0].originalText == "검토 결과입니다."
+    assert result_findings[0].suggestedText == "검토 결과를 송부드립니다."
+    assert "검토 결과를 송부드립니다." in response.revisedDocument.content
+    assert "검토 결과를 송부드립니다." in response.revisedDocument.htmlContent
+
+
+def test_document_review_agent_runs_manual_prompt_llm_final_check() -> None:
+    llm = StubLLMClient(
+        '{"checkRequiredItems":[{"category":"항목 번호 체계","message":"같은 단계의 항목 번호가 가., 가.로 반복되어 나. 여부 확인이 필요합니다.","originalText":"가. 검토결과: 총 99점 중 88점","lineStart":4}]}'
+    )
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000001",
+        traceId="00000000-0000-0000-0000-000000000002",
+        conversationUid="00000000-0000-0000-0000-000000000003",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            title="검토 결과 송부",
+            docType="OFFICIAL_DOCUMENT",
+            bodyText=(
+                "한성대학교 사진자료 제공 및 사용허가\n"
+                "1. 관련: 성한사진박물관 자료팀-118(2026. 4. 25.)\n"
+                "2. 위 호와 관련하여 검토 결과를 송부드립니다.\n"
+                "가. 검토자료: 사진자료 총 99점\n"
+                "가. 검토결과: 총 99점 중 88점\n"
+                "다. 파일 송부: 전자우편으로 전달\n"
+                "붙임  1. 검토 결과 1부.  끝."
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request, llm_client=llm)
+
+    assert llm.prompts
+    assert "전자결재 프롬프트 ver1" in llm.prompts[0]
+    assert "전자결재 프롬프트 ver1-gpt가 작성" in llm.prompts[0]
+    assert any(item.category == "항목 번호 체계" and "가., 가." in item.message for item in response.checkRequiredItems)
 
 
 def test_document_review_agent_returns_fallback_for_empty_body() -> None:
@@ -187,6 +267,105 @@ def test_document_review_agent_keeps_korean_dot_marker_and_fixes_only_indent() -
     assert any(item.original_text.startswith("나.") and item.suggested_text.startswith("  나.") for item in indent_findings)
 
 
+def test_document_review_agent_fixes_repeated_same_level_korean_marker() -> None:
+    findings, _, _ = review_rules(
+        "1. 관련: 성한사진박물관 자료팀-118\n"
+        "2. 위 호와 관련하여 검토 결과를 송부드립니다.\n"
+        "  가. 검토자료: 사진자료 총 99점\n"
+        "  가. 검토결과: 총 99점 중 88점\n"
+        "  다. 파일 송부: 전자우편으로 전달\n"
+        "붙임  1. 검토 결과 1부.  끝."
+    )
+
+    sequence_findings = [item for item in findings if item.rule_code == "ITEM_MARKER_SEQUENCE"]
+
+    assert sequence_findings
+    assert sequence_findings[0].original_text == "  가. 검토결과: 총 99점 중 88점"
+    assert sequence_findings[0].suggested_text == "  나. 검토결과: 총 99점 중 88점"
+
+
+def test_document_review_agent_keeps_next_marker_after_style_only_fix() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000031",
+        traceId="00000000-0000-0000-0000-000000000032",
+        conversationUid="00000000-0000-0000-0000-000000000033",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "1) 학술정보팀 수입(2026년 4월분)을 정산합니다.\n"
+                "2. 수입 정산 내용\n"
+                "가. 정산 대상: 도서 연체료 문서 출력료, 연회비\n"
+                "나. 정산 기간: 2026년 4월분\n"
+                "다) 정산 금액: 금254,400원(금이십오만사천사백원)\n"
+                "라. 상세 내역\n"
+                "붙임  1. 도서 연체료 1부.  끝."
+            ),
+            bodyHtml=(
+                "<p>1) 학술정보팀 수입(2026년 4월분)을 정산합니다.</p>"
+                "<p>2. 수입 정산 내용</p>"
+                "<p>가. 정산 대상: 도서 연체료 문서 출력료, 연회비</p>"
+                "<p>나. 정산 기간: 2026년 4월분</p>"
+                "<p>다) 정산 금액: 금254,400원(금이십오만사천사백원)</p>"
+                "<p>라. 상세 내역</p>"
+                "<p>붙임&nbsp;&nbsp;1. 도서 연체료 1부.  끝.</p>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert "다. 정산 금액" in response.revisedDocument.content
+    assert "라. 상세 내역" in response.revisedDocument.content
+    assert "다. 상세 내역" not in response.revisedDocument.content
+    assert "라) 상세 내역" not in response.revisedDocument.content
+    assert response.revisedDocument.htmlContent is not None
+    assert "다. 정산 금액" in response.revisedDocument.htmlContent
+    assert "라. 상세 내역" in response.revisedDocument.htmlContent
+    assert "다. 상세 내역" not in response.revisedDocument.htmlContent
+    assert "라) 상세 내역" not in response.revisedDocument.htmlContent
+
+
+def test_document_review_agent_treats_first_marker_as_top_level_even_if_indented() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000040",
+        traceId="00000000-0000-0000-0000-000000000041",
+        conversationUid="00000000-0000-0000-0000-000000000042",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "  가. 첫 항목\n"
+                "2. 둘째 항목\n"
+                "  가. 하위 항목\n"
+                "  나. 하위 항목\n"
+                "3. 셋째 항목\n"
+                "붙임  1. 자료 1부.  끝."
+            ),
+            bodyHtml=(
+                "<p>&nbsp;&nbsp;가. 첫 항목</p>"
+                "<p>2. 둘째 항목</p>"
+                "<p style=\"margin-left:20pt\">가. 하위 항목</p>"
+                "<p style=\"margin-left:20pt\">나. 하위 항목</p>"
+                "<p>3. 셋째 항목</p>"
+                "<p>붙임&nbsp;&nbsp;1. 자료 1부.  끝.</p>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert any(
+        finding.ruleCode == "ITEM_MARKER_STYLE"
+        and finding.originalText == "  가. 첫 항목"
+        and finding.suggestedText == "  1. 첫 항목"
+        for finding in response.findings
+    )
+    assert "  1. 첫 항목" in response.revisedDocument.content
+    assert "2. 둘째 항목" in response.revisedDocument.content
+    assert "3. 셋째 항목" in response.revisedDocument.content
+    assert response.revisedDocument.htmlContent is not None
+    assert "1. 첫 항목" in response.revisedDocument.htmlContent
+
+
 def test_document_review_agent_suggests_attachment_label_as_butim() -> None:
     findings, checks, _ = review_rules(
         "첨부  1. 도서 연체료 1부.\n"
@@ -200,6 +379,101 @@ def test_document_review_agent_suggests_attachment_label_as_butim() -> None:
     assert label_findings[0].suggested_text == "붙임  1. 도서 연체료 1부."
     assert "첨부" in label_findings[0].original_text
     assert any(item.category == "붙임 표시" for item in checks)
+
+
+def test_document_review_agent_normalizes_split_attachment_label_and_spacing() -> None:
+    cases = (
+        "붙 임1. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝.",
+        "붙 임. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝.",
+        "붙임1. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝.",
+        "붙임 1. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝.",
+    )
+
+    for original in cases:
+        findings, checks, _ = review_rules(original)
+
+        attachment_findings = [item for item in findings if item.rule_code == "ATTACHMENT_SPACING"]
+
+        assert attachment_findings
+        assert attachment_findings[0].original_text == original
+        assert attachment_findings[0].suggested_text == "붙임  1. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝."
+        assert not any(item.category == "붙임 표시" for item in checks)
+
+
+def test_document_review_agent_does_not_infer_html_item_indent_from_plain_text_only() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000001",
+        traceId="00000000-0000-0000-0000-000000000002",
+        conversationUid="00000000-0000-0000-0000-000000000003",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "1. 학술정보팀 수입을 정산합니다.\n"
+                "2. 수입 정산 내용\n"
+                "가. 정산 대상: 도서 연체료 문서 출력료, 연회비\n"
+                "나. 정산 기간: 2026년 4월분\n"
+                "다. 정산 금액: 금254,400원(금이십오만사천사백원)\n"
+                "라. 상세 내역\n"
+                "붙임  1. 도서 연체료 1부.  끝."
+            ),
+            bodyHtml=(
+                "<p>1. 학술정보팀 수입을 정산합니다.</p>"
+                "<p>2. 수입 정산 내용</p>"
+                "<p style=\"margin-left:20pt\">가. 정산 대상: 도서 연체료 문서 출력료, 연회비</p>"
+                "<p style=\"margin-left:20pt\">나. 정산 기간: 2026년 4월분</p>"
+                "<p style=\"margin-left:20pt\">다. 정산 금액: 금254,400원(금이십오만사천사백원)</p>"
+                "<p style=\"margin-left:20pt\">라. 상세 내역</p>"
+                "<p>붙임&nbsp;&nbsp;1. 도서 연체료 1부.  끝.</p>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert all(finding.ruleCode != "ITEM_INDENTATION" for finding in response.findings)
+    assert "가. 정산 대상" in response.revisedDocument.content
+    assert "  가. 정산 대상" not in response.revisedDocument.content
+
+
+def test_document_review_agent_preserves_html_item_indent_even_when_plain_text_has_spaces() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000034",
+        traceId="00000000-0000-0000-0000-000000000035",
+        conversationUid="00000000-0000-0000-0000-000000000036",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText=(
+                "1. 학술정보팀 수입을 정산합니다.\n"
+                "2. 수입 정산 내용\n"
+                " 가. 정산 대상: 도서 연체료 문서 출력료, 연회비\n"
+                "  나. 정산 기간: 2026년 4월분\n"
+                "다) 정산 금액: 금254,400원(금이십오만사천사백원)\n"
+                "라. 상세 내역\n"
+                "붙임  1. 도서 연체료 1부.  끝."
+            ),
+            bodyHtml=(
+                "<p>1. 학술정보팀 수입을 정산합니다.</p>"
+                "<p>2. 수입 정산 내용</p>"
+                "<p style=\"margin-left:20pt\">가. 정산 대상: 도서 연체료 문서 출력료, 연회비</p>"
+                "<p style=\"margin-left:20pt\">나. 정산 기간: 2026년 4월분</p>"
+                "<p style=\"margin-left:20pt\">다) 정산 금액: 금254,400원(금이십오만사천사백원)</p>"
+                "<p style=\"margin-left:20pt\">라. 상세 내역</p>"
+                "<p>붙임&nbsp;&nbsp;1. 도서 연체료 1부.  끝.</p>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert all(finding.ruleCode != "ITEM_INDENTATION" for finding in response.findings)
+    assert " 가. 정산 대상" in response.revisedDocument.content
+    assert "  나. 정산 기간" in response.revisedDocument.content
+    assert "다. 정산 금액" in response.revisedDocument.content
+    assert "라. 상세 내역" in response.revisedDocument.content
+    assert response.revisedDocument.htmlContent is not None
+    assert "margin-left:20pt" in response.revisedDocument.htmlContent
+    assert "다. 정산 금액" in response.revisedDocument.htmlContent
+    assert "라. 상세 내역" in response.revisedDocument.htmlContent
 
 
 def test_document_review_agent_applies_attachment_label_to_html_content() -> None:
@@ -219,7 +493,28 @@ def test_document_review_agent_applies_attachment_label_to_html_content() -> Non
     assert "붙임" in response.revisedDocument.content
     assert response.revisedDocument.htmlContent is not None
     assert "붙임" in response.revisedDocument.htmlContent
+    assert "붙임\u00a0\u00a01." in response.revisedDocument.htmlContent
     assert "첨부" not in response.revisedDocument.htmlContent
+
+
+def test_document_review_agent_preserves_two_attachment_spaces_in_revised_html() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000037",
+        traceId="00000000-0000-0000-0000-000000000038",
+        conversationUid="00000000-0000-0000-0000-000000000039",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText="붙 임. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝.",
+            bodyHtml="<p>붙 임. 서울생활사박물관 사진자료 사용 허가 검토 결과 1부.  끝.</p>",
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    assert "붙임  1. 서울생활사박물관" in response.revisedDocument.content
+    assert response.revisedDocument.htmlContent is not None
+    assert "붙임\u00a0\u00a01. 서울생활사박물관" in response.revisedDocument.htmlContent
+    assert "붙임 1." not in response.revisedDocument.htmlContent
 
 
 def test_document_review_html_auto_fix_does_not_modify_table_cells() -> None:
@@ -551,7 +846,7 @@ def test_document_review_agent_checks_budget_table_required_columns_from_html() 
     assert "세목코드" in budget_checks[0].message
 
 
-def test_document_review_agent_flags_wrong_budget_table_header_names() -> None:
+def test_document_review_agent_suggests_wrong_budget_table_header_names() -> None:
     request = DocumentReviewRequest(
         queryUid="00000000-0000-0000-0000-000000000001",
         traceId="00000000-0000-0000-0000-000000000002",
@@ -570,9 +865,49 @@ def test_document_review_agent_flags_wrong_budget_table_header_names() -> None:
 
     response = run_document_review_agent(request)
 
+    header_fixes = {
+        (item.originalText, item.suggestedText)
+        for item in response.findings
+        if item.ruleCode == "BUDGET_TABLE_HEADER"
+    }
     messages = [item.message for item in response.checkRequiredItems]
-    assert any("회계구분" in message and "소요예산" in message for message in messages)
+    assert ("예산구분", "회계구분") in header_fixes
+    assert ("돈", "소요예산") in header_fixes
+    assert all("회계구분" not in message and "소요예산" not in message for message in messages)
     assert all("합계" not in message for message in messages)
+
+
+def test_document_review_agent_corrects_wrong_budget_table_header_names_in_revised_html() -> None:
+    request = DocumentReviewRequest(
+        queryUid="00000000-0000-0000-0000-000000000001",
+        traceId="00000000-0000-0000-0000-000000000002",
+        conversationUid="00000000-0000-0000-0000-000000000003",
+        message="전자결재 문서를 검토해줘",
+        document=ReviewDocument(
+            bodyText="마. 소요예산\n첨부  1. 도서 연체료 1부.  끝.",
+            bodyHtml=(
+                "<table><tbody>"
+                "<tr><td>회계연도</td><td>예산구분</td><td>세목</td><td>세목코드</td><td>돈</td></tr>"
+                "<tr><td>2026학년도</td><td>학교회계</td><td>잡수입</td><td>9911001</td><td>254,400</td></tr>"
+                "</tbody></table>"
+            ),
+        ),
+    )
+
+    response = run_document_review_agent(request)
+
+    html = response.revisedDocument.htmlContent or ""
+    header_fixes = {
+        (item.originalText, item.suggestedText)
+        for item in response.findings
+        if item.ruleCode == "BUDGET_TABLE_HEADER"
+    }
+    assert ("예산구분", "회계구분") in header_fixes
+    assert ("돈", "소요예산") in header_fixes
+    assert "회계구분" in html
+    assert "소요예산" in html
+    assert "예산구분" not in html
+    assert ">돈<" not in html
 
 
 def test_document_review_agent_returns_table_checks_for_amount_mismatch() -> None:
@@ -901,8 +1236,14 @@ def test_document_review_agent_flags_malformed_budget_table_without_treating_tab
 
     response = run_document_review_agent(request)
 
+    header_fixes = {
+        (item.originalText, item.suggestedText)
+        for item in response.findings
+        if item.ruleCode == "BUDGET_TABLE_HEADER"
+    }
     messages = [item.message for item in response.tableChecks]
-    assert any("회계구분" in message and "소요예산" in message for message in messages)
+    assert ("예산구분", "회계구분") in header_fixes
+    assert ("돈", "소요예산") in header_fixes
     assert all("합계" not in message for message in messages)
     assert all("표 구조가 HTML 표로 인식되지 않았습니다" not in message for message in messages)
 

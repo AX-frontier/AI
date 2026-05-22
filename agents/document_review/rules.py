@@ -2,7 +2,8 @@
 
 구현 범위는 날짜/시간/문장부호/항목 번호/붙임/끝표시 같은 텍스트 규칙과,
 수입 정산·소요예산 표의 필수 항목 및 금액 일치 여부 확인으로 제한한다.
-표는 자동 수정하지 않고 원본 전자결재/HWP 표에 사람이 반영할 코멘트만 반환한다.
+표 금액은 자동 수정하지 않고 원본 전자결재/HWP 표에 사람이 반영할 코멘트만 반환한다.
+소요예산 표의 명확한 헤더 오기(예산구분, 돈 등)는 본문 복사 결과에 반영한다.
 매뉴얼 항목별 처리 방식은 MANUAL_COVERAGE.md에 정리한다.
 """
 
@@ -28,6 +29,12 @@ MAX_DECLARED_AMOUNT_REWRITE_RATIO = 10
 ITEM_MARKER_PATTERN = re.compile(
     r"^(?P<indent>[ \t\u00a0\u3000]*)(?P<marker>\d+\.|[가-힣]\.|\d+\)|[가-힣]\)|\(\d+\)|\([가-힣]\)|[①-⑳]|[㉮-㉻])(?P<spaces>[^\S\r\n]*)(?P<content>\S.*)$"
 )
+ATTACHMENT_LABEL_PREFIX_PATTERN = re.compile(
+    r"^(?P<indent>[ \t\u00a0\u3000]*)(?P<label>첨[ \t\u00a0\u3000]*부|붙[ \t\u00a0\u3000]*임)(?P<spaces>[ \t\u00a0\u3000]*)(?P<number>\d+\.)"
+)
+ATTACHMENT_SPLIT_LABEL_WITHOUT_NUMBER_PATTERN = re.compile(
+    r"^(?P<indent>[ \t\u00a0\u3000]*)(?P<label>첨[ \t\u00a0\u3000]+부|붙[ \t\u00a0\u3000]+임)(?P<spaces>[ \t\u00a0\u3000]*)\.(?=[ \t\u00a0\u3000]*\S)"
+)
 DATA_TABLE_KEYWORDS = (
     "구분",
     "건수",
@@ -45,6 +52,16 @@ DATA_TABLE_KEYWORDS = (
     "소요예산",
     "산출내역",
 )
+BUDGET_REQUIRED_LABELS = {
+    "회계연도": ("회계연도", "회계 연도"),
+    "회계구분": ("회계구분", "회계 구분"),
+    "세목": ("세목",),
+    "세목코드": ("세목코드", "세목 코드"),
+    "소요예산": ("소요예산", "소요 예산"),
+}
+# 예산구분은 잘못 쓴 소요예산 표를 찾아내기 위한 힌트일 뿐, 회계구분의 허용 별칭이 아니다.
+BUDGET_TABLE_HINT_HEADERS = set(BUDGET_REQUIRED_LABELS) | {"예산구분"}
+BUDGET_HEADER_ROW_HINTS = tuple(BUDGET_TABLE_HINT_HEADERS)
 COMMON_ACRONYMS = {
     "AI",
     "API",
@@ -115,10 +132,10 @@ def apply_safe_suggestions_to_html(body_html: str | None, findings: list[RuleFin
     for finding in findings:
         if not finding.editable or not finding.suggested_text:
             continue
-        if finding.rule_code == "ATTACHMENT_LABEL":
+        if finding.rule_code in {"ATTACHMENT_LABEL", "ATTACHMENT_SPACING"}:
             revised = _apply_attachment_label_to_html(revised)
             continue
-        if finding.rule_code == "ITEM_MARKER_STYLE":
+        if finding.rule_code in {"ITEM_MARKER_STYLE", "ITEM_MARKER_SEQUENCE"}:
             revised = _apply_item_marker_style_to_html(revised, finding)
             continue
         if finding.rule_code == "DECLARED_AMOUNT_MISMATCH":
@@ -129,7 +146,67 @@ def apply_safe_suggestions_to_html(body_html: str | None, findings: list[RuleFin
             finding.original_text,
             finding.suggested_text,
         )
-    return revised
+    return _normalize_budget_table_headers_in_html(revised)
+
+
+def _normalize_budget_table_headers_in_html(body_html: str) -> str:
+    soup = BeautifulSoup(body_html, "html.parser")
+    changed = False
+    for table in soup.find_all("table"):
+        header_row = _find_budget_header_row_element(table)
+        if header_row is None:
+            continue
+        for cell in header_row.find_all(["td", "th"], recursive=False):
+            label = _normalize_label_text(cell.get_text(" ", strip=True))
+            replacement = _budget_header_replacement(label)
+            if replacement is None:
+                continue
+            _replace_cell_label_text(cell, replacement)
+            changed = True
+    return str(soup) if changed else body_html
+
+
+def _find_budget_header_row_element(table):
+    for row in table.find_all("tr"):
+        if row.find_parent("table") is not table:
+            continue
+        labels = [
+            _normalize_label_text(cell.get_text(" ", strip=True))
+            for cell in row.find_all(["td", "th"], recursive=False)
+        ]
+        if not labels:
+            continue
+        joined = "".join(labels)
+        if "회계연도" in joined and "세목" in joined and "세목코드" in joined:
+            return row
+    return None
+
+
+def _budget_header_replacement(label: str) -> str | None:
+    if label == "예산구분":
+        return "회계구분"
+    if label in {"돈", "금액", "금액원", "예산", "예산액"}:
+        return "소요예산"
+    return None
+
+
+def _replace_cell_label_text(cell, replacement: str) -> None:
+    replaced = False
+    for text_node in cell.find_all(string=True):
+        if text_node.find_parent("table") is not cell.find_parent("table"):
+            continue
+        text = str(text_node)
+        if not text.strip():
+            continue
+        prefix_match = re.match(r"^[\s\u00a0\u3000]*", text)
+        suffix_match = re.search(r"[\s\u00a0\u3000]*$", text)
+        prefix = prefix_match.group(0) if prefix_match else ""
+        suffix = suffix_match.group(0) if suffix_match else ""
+        text_node.replace_with(f"{prefix}{replacement}{suffix}")
+        replaced = True
+        break
+    if not replaced:
+        cell.append(replacement)
 
 
 def _is_inside_protected_table(text_node) -> bool:
@@ -285,10 +362,14 @@ def _apply_attachment_label_to_html(body_html: str) -> str:
         if _is_inside_protected_table(text_node):
             continue
         original = str(text_node)
-        revised = re.sub(
-            r"^([ \t\u00a0\u3000]*)첨부(?=[ \t\u00a0\u3000]*\d+\.)",
-            r"\1붙임",
+        revised = ATTACHMENT_LABEL_PREFIX_PATTERN.sub(
+            lambda match: f"{match.group('indent')}붙임\u00a0\u00a0{match.group('number')}",
             original,
+            count=1,
+        )
+        revised = ATTACHMENT_SPLIT_LABEL_WITHOUT_NUMBER_PATTERN.sub(
+            lambda match: f"{match.group('indent')}붙임\u00a0\u00a01.",
+            revised,
             count=1,
         )
         if revised != original:
@@ -339,6 +420,8 @@ def split_document_lines(text: str) -> list[DocumentLine]:
 def review_rules(
     text: str,
     extracted_tables: list[ExtractedTable] | None = None,
+    *,
+    source_has_html: bool = False,
 ) -> tuple[list[RuleFinding], list[CheckRequiredItem], list[FormatNoticeItem]]:
     lines = split_document_lines(text)
     tables = extracted_tables or []
@@ -352,7 +435,9 @@ def review_rules(
     findings.extend(_review_document_level(lines))
     findings.extend(_review_single_item_sections(lines))
     findings.extend(_review_item_marker_styles(lines))
-    findings.extend(_review_item_marker_indentation(lines))
+    findings.extend(_review_item_marker_sequence(lines))
+    findings.extend(_review_item_marker_indentation(lines, source_has_html=source_has_html))
+    findings.extend(_review_budget_header_corrections(lines, tables))
     findings.extend(_review_declared_amount_against_tables(lines, tables))
     checks.extend(_review_related_documents(lines))
     checks.extend(_review_law_references(lines))
@@ -394,6 +479,7 @@ def _review_line(line: DocumentLine) -> list[RuleFinding]:
     findings.extend(_review_time(line))
     findings.extend(_review_item_spacing(line))
     findings.extend(_review_approval_phrase(line))
+    findings.extend(_review_result_delivery_phrase(line))
     findings.extend(_review_end_marker_spacing(line))
     findings.extend(_review_attachment_spacing(line))
     return findings
@@ -620,7 +706,14 @@ def _review_item_marker_hierarchy(lines: list[DocumentLine]) -> list[CheckRequir
     return checks
 
 
-def _review_item_marker_indentation(lines: list[DocumentLine]) -> list[RuleFinding]:
+def _review_item_marker_indentation(
+    lines: list[DocumentLine],
+    *,
+    source_has_html: bool = False,
+) -> list[RuleFinding]:
+    if source_has_html:
+        return []
+
     body_lines = _body_lines_before_attachments(lines)
     items = [_parse_item_marker(line) for line in body_lines]
     parsed_items = [item for item in items if item is not None]
@@ -664,9 +757,9 @@ def _review_item_marker_styles(lines: list[DocumentLine]) -> list[RuleFinding]:
         return []
 
     expected_by_indent = _expected_item_styles_by_indent(parsed_items)
+    expected_styles = _expected_item_styles(parsed_items, expected_by_indent)
     findings: list[RuleFinding] = []
-    for index, item in enumerate(parsed_items):
-        expected_style = _expected_item_style(parsed_items, index, item, expected_by_indent)
+    for item, expected_style in zip(parsed_items, expected_styles, strict=False):
         if item.style == expected_style:
             continue
         suggested_line = _replace_item_marker(item.line.text, item.marker, expected_style)
@@ -691,12 +784,58 @@ def _review_item_marker_styles(lines: list[DocumentLine]) -> list[RuleFinding]:
     return findings
 
 
+def _review_item_marker_sequence(lines: list[DocumentLine]) -> list[RuleFinding]:
+    body_lines = _body_lines_before_attachments(lines)
+    items = [_parse_item_marker(line) for line in body_lines]
+    parsed_items = [item for item in items if item is not None]
+    if len(parsed_items) < 2:
+        return []
+
+    expected_by_indent = _expected_item_styles_by_indent(parsed_items)
+    expected_styles = _expected_item_styles(parsed_items, expected_by_indent)
+    next_value_by_level: dict[tuple[int, str], int] = {}
+    findings: list[RuleFinding] = []
+    for item, expected_style in zip(parsed_items, expected_styles, strict=False):
+        value = _marker_value(item.marker)
+        if value is None:
+            continue
+        level_key = (item.indent_width, expected_style)
+        expected_value = next_value_by_level.get(level_key)
+        if expected_value is None:
+            next_value_by_level[level_key] = value + 1
+            continue
+        if value == expected_value:
+            next_value_by_level[level_key] = value + 1
+            continue
+        suggested_marker = _convert_value_to_style(expected_value, item.style)
+        if suggested_marker is None:
+            continue
+        suggested_line = _replace_item_marker_text(item.line.text, suggested_marker)
+        if suggested_line == item.line.text:
+            continue
+        findings.append(
+            RuleFinding(
+                rule_code="ITEM_MARKER_SEQUENCE",
+                category="항목 번호 체계",
+                severity="LOW",
+                status="REVISION_REQUIRED",
+                line_start=item.line.number,
+                line_end=item.line.number,
+                original_text=item.line.text,
+                suggested_text=suggested_line,
+                reason="같은 단계의 항목 기호는 가., 나., 다.처럼 순서대로 이어져야 합니다.",
+            )
+        )
+        next_value_by_level[level_key] = expected_value + 1
+    return findings
+
+
 def _body_lines_before_attachments(lines: list[DocumentLine]) -> list[DocumentLine]:
     attachment_start = next(
         (
             line.number
             for line in lines
-            if "붙임" in line.text or re.search(r"^\s*첨부(?=\s+\d+\.)", line.text)
+            if _has_attachment_label(line.text)
         ),
         None,
     )
@@ -716,21 +855,44 @@ def _expected_item_styles_by_indent(parsed_items: list[ParsedItemMarker]) -> dic
     }
 
 
+def _expected_item_styles(
+    parsed_items: list[ParsedItemMarker],
+    expected_by_indent: dict[int, str],
+) -> list[str]:
+    expected_styles: list[str] = []
+    for index, item in enumerate(parsed_items):
+        expected_styles.append(
+            _expected_item_style(
+                parsed_items,
+                index,
+                item,
+                expected_by_indent,
+                expected_styles,
+            )
+        )
+    return expected_styles
+
+
 def _expected_item_style(
     parsed_items: list[ParsedItemMarker],
     index: int,
     item: ParsedItemMarker,
     expected_by_indent: dict[int, str],
+    previous_expected_styles: list[str] | None = None,
 ) -> str:
+    if index == 0:
+        return ITEM_STYLE_ORDER[0]
+
     indent_style = expected_by_indent[item.indent_width]
     if item.style == indent_style:
         return item.style
 
-    sequence_style = _expected_style_from_previous_sequence(parsed_items[:index], item)
+    previous_items = parsed_items[:index]
+    sequence_style = _expected_style_from_previous_sequence(previous_items, item, previous_expected_styles)
     if sequence_style is not None:
         return sequence_style
 
-    contextual_style = _expected_style_from_parent_context(parsed_items[:index], item)
+    contextual_style = _expected_style_from_parent_context(previous_items, item, previous_expected_styles)
     if contextual_style is not None:
         return contextual_style
 
@@ -740,6 +902,7 @@ def _expected_item_style(
 def _expected_style_from_parent_context(
     previous_items: list[ParsedItemMarker],
     item: ParsedItemMarker,
+    previous_expected_styles: list[str] | None = None,
 ) -> str | None:
     try:
         style_index = ITEM_STYLE_ORDER.index(item.style)
@@ -749,6 +912,10 @@ def _expected_style_from_parent_context(
         return None
 
     parent_style = ITEM_STYLE_ORDER[style_index - 1]
+    for previous_index, previous in enumerate(previous_items):
+        previous_style = _expected_style_for_previous_item(previous, previous_index, previous_expected_styles)
+        if previous_style == parent_style:
+            return item.style
     if any(previous.style == parent_style for previous in previous_items):
         return item.style
     return None
@@ -764,22 +931,35 @@ def _expected_indent_width_for_style(style: str) -> int:
 def _expected_style_from_previous_sequence(
     previous_items: list[ParsedItemMarker],
     item: ParsedItemMarker,
+    previous_expected_styles: list[str] | None = None,
 ) -> str | None:
     item_value = _marker_value(item.marker)
     item_kind = _marker_kind(item.marker)
     if item_value is None or item_kind is None:
         return None
-    for previous in reversed(previous_items):
+    for previous_index in range(len(previous_items) - 1, -1, -1):
+        previous = previous_items[previous_index]
         previous_value = _marker_value(previous.marker)
         previous_kind = _marker_kind(previous.marker)
         if previous_value is None or previous_kind != item_kind:
             continue
+        previous_style = _expected_style_for_previous_item(previous, previous_index, previous_expected_styles)
         if previous_value == item_value - 1:
-            return previous.style
-        if previous_value < item_value and previous.style.endswith("_dot") and not item.style.endswith("_dot"):
-            return previous.style
+            return previous_style
+        if previous_value < item_value and previous_style.endswith("_dot") and not item.style.endswith("_dot"):
+            return previous_style
         return None
     return None
+
+
+def _expected_style_for_previous_item(
+    previous: ParsedItemMarker,
+    previous_index: int,
+    previous_expected_styles: list[str] | None,
+) -> str:
+    if previous_expected_styles is not None and previous_index < len(previous_expected_styles):
+        return previous_expected_styles[previous_index]
+    return previous.style
 
 
 
@@ -789,6 +969,13 @@ def _replace_item_marker(line_text: str, current_marker: str, expected_style: st
         return line_text
     suggested_marker = _convert_marker_to_style(current_marker, expected_style)
     if suggested_marker is None:
+        return line_text
+    return _replace_item_marker_text(line_text, suggested_marker)
+
+
+def _replace_item_marker_text(line_text: str, suggested_marker: str) -> str:
+    match = ITEM_MARKER_PATTERN.match(line_text)
+    if not match:
         return line_text
     return (
         f"{match.group('indent')}{suggested_marker}"
@@ -800,6 +987,10 @@ def _convert_marker_to_style(marker: str, expected_style: str) -> str | None:
     value = _marker_value(marker)
     if value is None:
         return None
+    return _convert_value_to_style(value, expected_style)
+
+
+def _convert_value_to_style(value: int, expected_style: str) -> str | None:
     if expected_style == "decimal_dot":
         return f"{value}."
     if expected_style == "korean_dot":
@@ -819,6 +1010,13 @@ def _convert_marker_to_style(marker: str, expected_style: str) -> str | None:
         circled_korean = "㉮㉯㉰㉱㉲㉳㉴㉵㉶㉷㉸㉹㉺㉻"
         return circled_korean[value - 1] if 1 <= value <= len(circled_korean) else None
     return None
+
+
+def _has_attachment_label(text: str) -> bool:
+    return (
+        ATTACHMENT_LABEL_PREFIX_PATTERN.search(text) is not None
+        or ATTACHMENT_SPLIT_LABEL_WITHOUT_NUMBER_PATTERN.search(text) is not None
+    )
 
 
 def _marker_value(marker: str) -> int | None:
@@ -941,6 +1139,25 @@ def _review_approval_phrase(line: DocumentLine) -> list[RuleFinding]:
     ]
 
 
+def _review_result_delivery_phrase(line: DocumentLine) -> list[RuleFinding]:
+    findings: list[RuleFinding] = []
+    for match in re.finditer(r"검토\s*결과\s*입니다\.", line.text):
+        findings.append(
+            RuleFinding(
+                rule_code="RESULT_DELIVERY_PHRASE",
+                category="문장 종결 표현",
+                severity="LOW",
+                status="REVISION_REQUIRED",
+                line_start=line.number,
+                line_end=line.number,
+                original_text=match.group(0),
+                suggested_text="검토 결과를 송부드립니다.",
+                reason="'검토 결과입니다.'는 결과 통보 문맥에서 '검토 결과를 송부드립니다.'로 명확히 씁니다.",
+            )
+        )
+    return findings
+
+
 def _review_end_marker_spacing(line: DocumentLine) -> list[RuleFinding]:
     if "끝." not in line.text:
         return []
@@ -989,41 +1206,36 @@ def _is_two_end_marker_space_units(spacing: str) -> bool:
 
 
 def _review_attachment_spacing(line: DocumentLine) -> list[RuleFinding]:
-    attachment_keyword = re.search(r"^\s*첨부(?=\s+\d+\.)", line.text)
-    if attachment_keyword:
-        original = line.text
-        suggested = re.sub(r"^(\s*)첨부(?=\s+\d+\.)", r"\1붙임", line.text, count=1)
-        return [
-            RuleFinding(
-                rule_code="ATTACHMENT_LABEL",
-                category="붙임 표시",
-                severity="LOW",
-                status="REVISION_REQUIRED",
-                line_start=line.number,
-                line_end=line.number,
-                original_text=original,
-                suggested_text=suggested,
-                reason="첨부파일 표시는 '첨부'가 아니라 '붙임'으로 적습니다.",
-            )
-        ]
-
-    match = re.search(r"붙임\s{0,1}(\d+\.)", line.text)
-    if not match:
-        return []
-    original = match.group(0)
-    if original.startswith("붙임  "):
-        return []
+    match = ATTACHMENT_LABEL_PREFIX_PATTERN.search(line.text)
+    if match:
+        suggested_prefix = f"{match.group('indent')}붙임  {match.group('number')}"
+        original_prefix = match.group(0)
+        if original_prefix == suggested_prefix:
+            return []
+        suggested = f"{suggested_prefix}{line.text[match.end():]}"
+    else:
+        match = ATTACHMENT_SPLIT_LABEL_WITHOUT_NUMBER_PATTERN.search(line.text)
+        if not match:
+            return []
+        suggested = f"{match.group('indent')}붙임  1.{line.text[match.end():]}"
+    compact_label = _compact_text(match.group("label"))
+    rule_code = "ATTACHMENT_LABEL" if compact_label.startswith("첨") else "ATTACHMENT_SPACING"
+    reason = (
+        "첨부파일 표시는 '첨부'가 아니라 '붙임'으로 적고, '붙임' 뒤에는 2타를 띄웁니다."
+        if rule_code == "ATTACHMENT_LABEL"
+        else "'붙임'은 붙여 쓰고, 뒤에는 한 글자, 즉 2타를 띄운 뒤 첨부파일명을 적습니다."
+    )
     return [
         RuleFinding(
-            rule_code="ATTACHMENT_SPACING",
+            rule_code=rule_code,
             category="붙임 표시",
             severity="LOW",
             status="REVISION_REQUIRED",
             line_start=line.number,
             line_end=line.number,
-            original_text=original,
-            suggested_text=f"붙임  {match.group(1)}",
-            reason="'붙임' 뒤에는 한 글자, 즉 2타를 띄우고 첨부파일명을 적습니다.",
+            original_text=line.text,
+            suggested_text=suggested,
+            reason=reason,
         )
     ]
 
@@ -1087,6 +1299,64 @@ def _review_declared_amount_against_tables(lines: list[DocumentLine], tables: li
         )
         break
     return findings
+
+
+def _review_budget_header_corrections(
+    lines: list[DocumentLine],
+    tables: list[ExtractedTable],
+) -> list[RuleFinding]:
+    findings: list[RuleFinding] = []
+    for table in tables:
+        header_row = _find_budget_header_row(table)
+        if not header_row:
+            continue
+        for cell in header_row:
+            label = _normalize_label_text(cell)
+            replacement = _budget_header_replacement(label)
+            if replacement is None:
+                continue
+            original_text = cell.strip() or label
+            line_number = _first_line_number_containing(lines, original_text) or 1
+            findings.append(
+                RuleFinding(
+                    rule_code="BUDGET_TABLE_HEADER",
+                    category="소요예산 표시",
+                    severity="LOW",
+                    status="REVISION_REQUIRED",
+                    line_start=line_number,
+                    line_end=line_number,
+                    original_text=original_text,
+                    suggested_text=replacement,
+                    reason="소요예산 표 필수 열은 회계연도, 회계구분, 세목, 세목코드, 소요예산입니다.",
+                )
+            )
+    return findings
+
+
+def _find_budget_header_row(table: ExtractedTable) -> list[str] | None:
+    for row in table.rows:
+        labels = [_normalize_label_text(cell) for cell in row]
+        if not labels:
+            continue
+        joined = "".join(labels)
+        if "회계연도" in joined and "세목" in joined and "세목코드" in joined:
+            return row
+    return None
+
+
+def _budget_table_labels_after_header_corrections(table: ExtractedTable) -> set[str]:
+    labels: set[str] = set()
+    for row in table.rows:
+        for cell in row:
+            label = _normalize_label_text(cell)
+            if not label:
+                continue
+            labels.add(_budget_header_replacement(label) or label)
+    return labels
+
+
+def _budget_table_has_required_label(labels: set[str], aliases: tuple[str, ...]) -> bool:
+    return any(_normalize_label_text(alias) in labels for alias in aliases)
 
 
 def _declared_amount_delta_is_safe(declared_amount: int, reference_amount: int) -> bool:
@@ -1245,11 +1515,10 @@ def _review_budget_tables(lines: list[DocumentLine], tables: list[ExtractedTable
     if re.search(r"별도\s*예산\s*(없이|없음|미사용)|예산\s*(없음|미사용)", text):
         return []
 
-    budget_headers = {"회계연도", "예산구분", "회계구분", "세목", "세목코드", "소요예산"}
     candidate_tables = [
         table
         for table in tables
-        if any(header in _flatten_table(table) for header in budget_headers)
+        if any(header in _flatten_table(table) for header in BUDGET_TABLE_HINT_HEADERS)
     ]
     if not candidate_tables:
         if "소요예산" in text:
@@ -1263,20 +1532,13 @@ def _review_budget_tables(lines: list[DocumentLine], tables: list[ExtractedTable
             ]
         return []
 
-    required_labels = {
-        "회계연도": ("회계연도", "회계 연도"),
-        "회계구분": ("회계구분", "회계 구분"),
-        "세목": ("세목",),
-        "세목코드": ("세목코드", "세목 코드"),
-        "소요예산": ("소요예산", "소요 예산"),
-    }
     checks: list[CheckRequiredItem] = []
     for table in candidate_tables:
-        flattened = _flatten_table(table)
+        labels = _budget_table_labels_after_header_corrections(table)
         missing = [
             label
-            for label, aliases in required_labels.items()
-            if not any(alias in flattened for alias in aliases)
+            for label, aliases in BUDGET_REQUIRED_LABELS.items()
+            if not _budget_table_has_required_label(labels, aliases)
         ]
         if _budget_requires_total_row(table) and not _has_total_row(table):
             missing.append("합계")
@@ -1416,18 +1678,11 @@ def _review_budget_amount_table(
     detail_table: ExtractedTable | None,
 ) -> list[TableCheckItem]:
     checks: list[TableCheckItem] = []
-    flattened = _flatten_table(table)
-    required_labels = {
-        "회계연도": ("회계연도", "회계 연도"),
-        "회계구분": ("회계구분", "회계 구분"),
-        "세목": ("세목",),
-        "세목코드": ("세목코드", "세목 코드"),
-        "소요예산": ("소요예산", "소요 예산"),
-    }
+    labels = _budget_table_labels_after_header_corrections(table)
     missing_headers = [
         label
-        for label, aliases in required_labels.items()
-        if not any(alias in flattened for alias in aliases)
+        for label, aliases in BUDGET_REQUIRED_LABELS.items()
+        if not _budget_table_has_required_label(labels, aliases)
     ]
     if _budget_requires_total_row(table) and not _has_total_row(table):
         missing_headers.append("합계")
@@ -1623,7 +1878,7 @@ def _budget_amount_column_index(table: ExtractedTable) -> int | None:
     for row in table.rows:
         for index, cell in enumerate(row):
             label = _normalize_label_text(cell)
-            if "소요예산" in label:
+            if "소요예산" in label or _budget_header_replacement(label) == "소요예산":
                 return index
     return None
 
@@ -1634,7 +1889,7 @@ def _budget_data_rows(table: ExtractedTable) -> list[list[str]]:
         normalized_row = _normalize_label_text(" ".join(row))
         if not normalized_row:
             continue
-        if any(header in normalized_row for header in ("회계연도", "회계구분", "예산구분", "세목코드", "소요예산")):
+        if any(header in normalized_row for header in BUDGET_HEADER_ROW_HINTS):
             continue
         if "합계" in normalized_row or "총계" in normalized_row:
             continue
@@ -1700,24 +1955,26 @@ def _format_korean_number(value: int) -> str:
 
 
 def _review_attachment_list(lines: list[DocumentLine]) -> list[CheckRequiredItem]:
-    has_attachment_keyword = any("붙임" in line.text or re.search(r"^\s*첨부(?=\s+\d+\.)", line.text) for line in lines)
+    has_attachment_keyword = any(_has_attachment_label(line.text) for line in lines)
     if not has_attachment_keyword:
         return []
     first_attachment_index = next(
-        (index for index, line in enumerate(lines) if "붙임" in line.text or re.search(r"^\s*첨부(?=\s+\d+\.)", line.text)),
+        (index for index, line in enumerate(lines) if _has_attachment_label(line.text)),
         None,
     )
     attachment_scope = lines[first_attachment_index:] if first_attachment_index is not None else []
     attachment_lines = [
         line
         for line in attachment_scope
-        if re.match(r"^\s*(붙임\s+)?\d+\.\s+\S", line.text)
+        if re.match(r"^\s*(?:붙[ \t\u00a0\u3000]*임[ \t\u00a0\u3000]+)?\d+\.\s+\S", line.text)
     ]
     checks: list[CheckRequiredItem] = []
     for line in lines:
-        if "붙임" not in line.text and not re.search(r"^\s*첨부(?=\s+\d+\.)", line.text):
+        if not _has_attachment_label(line.text):
             continue
-        if re.search(r"붙임\s{2}\d+\.\s+.+\s+\d+부\.", line.text):
+        if re.search(r"^\s*붙임 {2}\d+\.\s+.+\s+\d+부\.", line.text):
+            continue
+        if _has_auto_fixable_butim_prefix(line.text):
             continue
         checks.append(
             CheckRequiredItem(
@@ -1729,7 +1986,7 @@ def _review_attachment_list(lines: list[DocumentLine]) -> list[CheckRequiredItem
         )
     if len(attachment_lines) >= 2:
         for line in attachment_lines[1:]:
-            if "붙임" in line.text:
+            if _has_attachment_label(line.text):
                 checks.append(
                     CheckRequiredItem(
                         category="붙임 표시",
@@ -1759,6 +2016,27 @@ def _review_attachment_list(lines: list[DocumentLine]) -> list[CheckRequiredItem
             )
         )
     return checks
+
+
+def _has_auto_fixable_butim_prefix(text: str) -> bool:
+    match = ATTACHMENT_LABEL_PREFIX_PATTERN.search(text)
+    split_match = ATTACHMENT_SPLIT_LABEL_WITHOUT_NUMBER_PATTERN.search(text)
+    match = match or split_match
+    if not match or not _compact_text(match.group("label")).startswith("붙"):
+        return False
+    if split_match and match is split_match:
+        normalized = ATTACHMENT_SPLIT_LABEL_WITHOUT_NUMBER_PATTERN.sub(
+            lambda prefix_match: f"{prefix_match.group('indent')}붙임  1.",
+            text,
+            count=1,
+        )
+    else:
+        normalized = ATTACHMENT_LABEL_PREFIX_PATTERN.sub(
+            lambda prefix_match: f"{prefix_match.group('indent')}붙임  {prefix_match.group('number')}",
+            text,
+            count=1,
+        )
+    return re.search(r"^\s*붙임 {2}\d+\.\s+.+\s+\d+부\.", normalized) is not None
 
 
 def _suggest_approval_phrase(text: str) -> str:
