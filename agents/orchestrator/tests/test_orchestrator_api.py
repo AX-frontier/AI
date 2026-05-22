@@ -91,6 +91,90 @@ class OrchestratorMainMismatchRepository:
         ]
 
 
+class OrchestratorMainMixedRepository:
+    def search_similar_chunks(
+        self,
+        query_embedding: list[float],
+        *,
+        limit: int = 5,
+        min_score: float = 0.0,
+    ) -> list[MainChunkRecord]:
+        return [
+            MainChunkRecord(
+                chunk_id="notice-major-0001",
+                document_id="notice-major",
+                text="복수전공 신청 기간과 변경 절차는 학사 공지를 확인해 주세요.",
+                score=0.91,
+                metadata={
+                    "title": "복수전공 신청 안내",
+                    "category": "학사",
+                    "posted_date": "2026-03-01",
+                    "url": "https://example.edu/major",
+                },
+            ),
+            MainChunkRecord(
+                chunk_id="notice-adobe-0001",
+                document_id="notice-adobe",
+                text="Adobe 공동구매 프로모션 안내입니다.",
+                score=0.89,
+                metadata={
+                    "title": "Adobe 공동구매 특별 프로모션",
+                    "category": "한성공지",
+                    "posted_date": "2026-03-02",
+                    "url": "https://example.edu/adobe",
+                },
+            ),
+            MainChunkRecord(
+                chunk_id="notice-volunteer-0001",
+                document_id="notice-volunteer",
+                text="초록우산 대학생 봉사단 모집 안내입니다.",
+                score=0.88,
+                metadata={
+                    "title": "초록우산 봉사단 모집",
+                    "category": "한성공지",
+                    "posted_date": "2026-03-03",
+                    "url": "https://example.edu/green-umbrella",
+                },
+            ),
+        ]
+
+
+class OrchestratorMainAxDisclaimedRepository:
+    def search_similar_chunks(
+        self,
+        query_embedding: list[float],
+        *,
+        limit: int = 5,
+        min_score: float = 0.0,
+    ) -> list[MainChunkRecord]:
+        return [
+            MainChunkRecord(
+                chunk_id="notice-ax-frontier-0001",
+                document_id="notice-ax-frontier",
+                text="한성 AX 프런티어 챌린지 1단계 심사 통과 결과를 안내합니다.",
+                score=0.93,
+                metadata={
+                    "title": "제1회 한성 AX 프런티어 챌린지 — 1단계 심사 통과 결과 발표",
+                    "category": "한성공지",
+                    "posted_date": "2026-03-01",
+                    "url": "https://example.edu/ax-frontier",
+                },
+            ),
+            MainChunkRecord(
+                chunk_id="notice-ax-frontier-gown-0001",
+                document_id="notice-ax-frontier-gown",
+                text="AX 프런티어와 직접 관련은 없으나 학위수여식 학사복 대여 안내입니다.",
+                score=0.91,
+                metadata={
+                    "title": "AX 프런티어 참고 학사복 대여 안내",
+                    "category": "한성공지",
+                    "posted_date": "2026-03-02",
+                    "url": "https://example.edu/gown",
+                },
+            ),
+        ]
+
+
 class OrchestratorLibraryMockRepository:
     def search_books(
         self,
@@ -572,6 +656,40 @@ def test_orchestrator_chat_endpoint_executes_main_agent() -> None:
     assert payload["intent"] == "ACADEMIC_INFO_QA"
 
 
+def test_orchestrator_chat_endpoint_filters_unrelated_main_sources_after_routing() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.9, reason="main hit"),
+            library=AgentEvidence(score=0.2, reason="weak library"),
+            document_review=AgentEvidence(score=0.0, reason="no document hit"),
+        )
+    )
+    app.dependency_overrides[get_main_chunk_repository] = lambda: OrchestratorMainMixedRepository()
+    app.dependency_overrides[get_main_embedding_provider] = lambda: DeterministicEmbeddingProvider()
+    app.dependency_overrides[get_main_llm_client] = lambda: MockLLMClient("복수전공 신청 안내입니다.")
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/chat",
+        json={
+            "queryUid": "q_main_filter_001",
+            "traceId": "tr_main_filter_001",
+            "conversationUid": "conv_main_filter_001",
+            "message": "복수전공 신청 기간 알려줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["targetAgent"] == "MAIN"
+    assert [source["url"] for source in payload["sources"]] == ["https://example.edu/major"]
+    assert "https://example.edu/adobe" not in payload["answer"]
+    assert "https://example.edu/green-umbrella" not in payload["answer"]
+
+
 def test_orchestrator_chat_endpoint_returns_data_preparing_when_main_has_no_relevant_data() -> None:
     _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
@@ -640,6 +758,87 @@ def test_orchestrator_chat_stream_endpoint_returns_data_preparing_when_main_has_
     assert done_payload["targetAgent"] == "DATA_PREPARING"
     assert done_payload["intent"] == "DATA_PREPARING"
     assert "데이터가 아직 준비되지 않았습니다" in done_payload["answer"]
+
+
+def test_orchestrator_chat_stream_endpoint_filters_unrelated_main_sources_after_routing() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.9, reason="main hit"),
+            library=AgentEvidence(score=0.2, reason="weak library"),
+            document_review=AgentEvidence(score=0.0, reason="no document hit"),
+        )
+    )
+    app.dependency_overrides[get_main_chunk_repository] = lambda: OrchestratorMainMixedRepository()
+    app.dependency_overrides[get_main_embedding_provider] = lambda: DeterministicEmbeddingProvider()
+    app.dependency_overrides[get_main_llm_client] = lambda: MockLLMClient("복수전공 신청 안내입니다.")
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/chat/stream",
+        json={
+            "queryUid": "q_main_filter_stream_001",
+            "traceId": "tr_main_filter_stream_001",
+            "conversationUid": "conv_main_filter_stream_001",
+            "message": "복수전공 신청 기간 알려줘",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    events = [line for line in response.text.splitlines() if line.startswith("data: ")]
+    done_payload = json.loads(events[-1].removeprefix("data: "))
+    assert done_payload["type"] == "done"
+    assert done_payload["targetAgent"] == "MAIN"
+    assert [source["url"] for source in done_payload["sources"]] == ["https://example.edu/major"]
+    assert "https://example.edu/adobe" not in done_payload["answer"]
+    assert "https://example.edu/green-umbrella" not in done_payload["answer"]
+
+
+def test_orchestrator_chat_stream_endpoint_does_not_emit_disclaimed_unrelated_links() -> None:
+    _ORCH_FOLLOWUP_MEMORY.clear()
+    app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
+        RoutingEvidence(
+            main=AgentEvidence(score=0.9, reason="main hit"),
+            library=AgentEvidence(score=0.2, reason="weak library"),
+            document_review=AgentEvidence(score=0.0, reason="no document hit"),
+        )
+    )
+    app.dependency_overrides[get_main_chunk_repository] = lambda: OrchestratorMainAxDisclaimedRepository()
+    app.dependency_overrides[get_main_embedding_provider] = lambda: DeterministicEmbeddingProvider()
+    app.dependency_overrides[get_main_llm_client] = lambda: MockLLMClient(
+        "\n".join(
+            [
+                "1. AX 프런티어 챌린지 심사 결과를 확인할 수 있습니다.",
+                "2. AX 프런티어와 직접 관련은 없으나 학사 행사 준비에 필요한 정보를 제공합니다.",
+            ]
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/orchestrator/chat/stream",
+        json={
+            "queryUid": "q_ax_disclaimed_stream_001",
+            "traceId": "tr_ax_disclaimed_stream_001",
+            "conversationUid": "conv_ax_disclaimed_stream_001",
+            "message": "ax 프론티어 보고싶어",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    events = [json.loads(line.removeprefix("data: ")) for line in response.text.splitlines() if line.startswith("data: ")]
+    emitted_text = "\n".join(str(event.get("text", "")) + "\n" + str(event.get("answer", "")) for event in events)
+    done_payload = events[-1]
+    assert done_payload["type"] == "done"
+    assert done_payload["targetAgent"] == "MAIN"
+    assert [source["url"] for source in done_payload["sources"]] == ["https://example.edu/ax-frontier"]
+    assert "https://example.edu/gown" not in emitted_text
+    assert "직접 관련은 없으나" not in emitted_text
+    assert "학사복 대여" not in emitted_text
 
 
 def test_orchestrator_chat_endpoint_executes_library_agent() -> None:
@@ -836,7 +1035,7 @@ def test_orchestrator_chat_endpoint_returns_fallback_for_ambiguous_low_margin() 
     assert "문서 검토" in payload["answer"]
 
 
-def test_orchestrator_chat_endpoint_keeps_main_for_vague_query_tokens_after_tuning() -> None:
+def test_orchestrator_chat_endpoint_returns_data_preparing_when_main_sources_do_not_match_vague_query() -> None:
     _ORCH_FOLLOWUP_MEMORY.clear()
     app.dependency_overrides[get_routing_evidence_collector] = lambda: FixedEvidenceCollector(
         RoutingEvidence(
@@ -864,8 +1063,10 @@ def test_orchestrator_chat_endpoint_keeps_main_for_vague_query_tokens_after_tuni
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["targetAgent"] == "MAIN"
-    assert payload["fallbackUsed"] is False
+    assert payload["targetAgent"] == "DATA_PREPARING"
+    assert payload["intent"] == "DATA_PREPARING"
+    assert payload["fallbackUsed"] is True
+    assert payload["sources"] == []
 
 
 def test_orchestrator_chat_endpoint_keeps_library_for_explicit_book_query_even_with_low_top1() -> None:

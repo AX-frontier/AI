@@ -40,6 +40,54 @@ STRICT_MATCH_CHECK_TOP_N = 3
 SCHOLARSHIP_ANCHOR_TERMS = ("장학", "scholarship")
 SCHOLARSHIP_TITLE_TERMS = ("장학", "장학금", "장학생", "scholarship")
 SCHOLARSHIP_CATEGORY_TERMS = ("장학공지",)
+MAIN_LINK_DISCLAIMER_TERMS = (
+    "관련 없음",
+    "관련없음",
+    "관련은 없",
+    "관련이 없",
+    "관련 없",
+    "관련 없는",
+    "관련성이 낮",
+    "무관",
+    "직접 관련은 없",
+    "직접 관련이 없",
+    "직접 관련 없",
+    "직접 관련된 것은 아니",
+    "직접적인 관련은 없",
+    "직접적인 관련이 없",
+)
+MAIN_SOURCE_RELEVANCE_STOP_TERMS = {
+    "공지",
+    "안내",
+    "관련",
+    "링크",
+    "url",
+    "페이지",
+    "학교",
+    "한성",
+    "한성대",
+    "한성대학교",
+    "신청",
+    "기간",
+    "대상",
+    "방법",
+    "정보",
+    "대해",
+    "대해서",
+    "관해",
+    "관해서",
+    "알고",
+    "싶어",
+    "궁금해",
+    "궁금합니다",
+    "보고싶어",
+    "보고싶은데",
+    "보고싶습니다",
+    "알고싶어",
+    "알고싶은데",
+    "찾아보고싶어",
+    "찾아보고싶음",
+}
 
 
 @dataclass(frozen=True)
@@ -49,6 +97,12 @@ class _SourceLink:
     category: str | None
     posted_date: str | None
     snippet: str
+
+
+@dataclass(frozen=True)
+class _SourceRelevanceGroup:
+    aliases: tuple[str, ...]
+    token_only: bool
 
 
 def build_main_response(
@@ -75,29 +129,53 @@ def build_main_response(
             result.keyword,
             "질문과 직접적으로 일치하는 공지 데이터를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
             reason_code="TOPIC_MISMATCH_NO_DATA",
-            related_chunks=result.chunks,
         )
-    links = select_source_links(result.chunks)
+
+    display_chunks = filter_relevant_source_chunks(result.keyword, result.chunks)
+    if not display_chunks:
+        return build_main_fallback_response(
+            result.keyword,
+            "질문과 직접적으로 일치하는 공지 데이터를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
+            reason_code="TOPIC_MISMATCH_NO_DATA",
+        )
+
+    links = select_source_links(display_chunks)
+    if not links:
+        return build_main_fallback_response(
+            result.keyword,
+            "질문과 직접적으로 일치하는 공식 링크를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
+            reason_code="TOPIC_MISMATCH_NO_DATA",
+        )
     if _fails_strict_match_filter(result.keyword, links):
         return build_main_fallback_response(
             result.keyword,
             "질문과 직접적으로 일치하는 공지 데이터를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
-            reason_code="GENERIC",
-            related_chunks=result.chunks,
+            reason_code="TOPIC_MISMATCH_NO_DATA",
         )
 
-    answer = _generate_answer(result, llm_client, links=links) if llm_client else _compose_answer(result, links=links)
-    sources = [_chunk_to_source(chunk) for chunk in result.chunks]
-    confidence = max(0.5, min(0.95, primary.score))
+    descriptions = _generate_link_descriptions(result.keyword, llm_client, links)
+    links, descriptions = filter_disclaimed_source_links(links, descriptions)
+    source_chunks = source_chunks_for_links(display_chunks, links)
+    if not links or not source_chunks:
+        return build_main_fallback_response(
+            result.keyword,
+            "질문과 직접적으로 일치하는 공식 링크를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
+            reason_code="TOPIC_MISMATCH_NO_DATA",
+        )
+
+    answer = _format_link_guide_answer(result.keyword, links, descriptions)
+    sources = [_chunk_to_source(chunk) for chunk in source_chunks]
+    display_primary = source_chunks[0]
+    confidence = max(0.5, min(0.95, display_primary.score))
     return MainChatResponse(
-        intent=_infer_main_intent(primary),
+        intent=_infer_main_intent(display_primary),
         answer=answer,
         sources=sources,
         confidence=round(confidence, 3),
         fallbackUsed=False,
         fallbackReason=None,
         searchKeyword=result.keyword,
-        resultCount=len(result.chunks),
+        resultCount=len(source_chunks),
     )
 
 
@@ -137,7 +215,8 @@ def build_main_fallback_response(
 
 def _compose_answer(result: MainSearchResult, *, links: list[_SourceLink] | None = None) -> str:
     links = links if links is not None else select_source_links(result.chunks)
-    descriptions = [_default_link_description(link) for link in links]
+    descriptions = _generate_link_descriptions(result.keyword, None, links)
+    links, descriptions = filter_disclaimed_source_links(links, descriptions)
     return _format_link_guide_answer(result.keyword, links, descriptions)
 
 
@@ -151,19 +230,31 @@ def _generate_answer(
         return _compose_answer(result, links=links)
 
     links = links if links is not None else select_source_links(result.chunks)
+    descriptions = _generate_link_descriptions(result.keyword, llm_client, links)
+    links, descriptions = filter_disclaimed_source_links(links, descriptions)
+    return _format_link_guide_answer(result.keyword, links, descriptions)
+
+
+def _generate_link_descriptions(
+    keyword: str,
+    llm_client: LLMClient | None,
+    links: list[_SourceLink],
+) -> list[str]:
+    if llm_client is None:
+        return [_default_link_description(link) for link in links]
+
     if not links:
-        return _format_link_guide_answer(result.keyword, links, [])
+        return []
 
     try:
-        raw_answer = llm_client.generate(_build_link_description_prompt(result.keyword, links))
+        raw_answer = llm_client.generate(_build_link_description_prompt(keyword, links))
     except Exception:
-        descriptions = [_default_link_description(link) for link in links]
-        return _format_link_guide_answer(result.keyword, links, descriptions)
+        return [_default_link_description(link) for link in links]
 
     descriptions = _parse_link_descriptions(raw_answer, len(links))
     if descriptions is None:
         descriptions = [_default_link_description(link) for link in links]
-    return _format_link_guide_answer(result.keyword, links, descriptions)
+    return descriptions
 
 
 def _top_source_links(chunks: list[MainChunkRecord], limit: int = 3) -> list[_SourceLink]:
@@ -192,6 +283,187 @@ def _top_source_links(chunks: list[MainChunkRecord], limit: int = 3) -> list[_So
 def select_source_links(chunks: list[MainChunkRecord]) -> list[_SourceLink]:
     limit = _decide_link_limit(chunks)
     return _top_source_links(chunks, limit=limit)
+
+
+def source_chunks_for_links(
+    chunks: list[MainChunkRecord],
+    links: list[_SourceLink],
+) -> list[MainChunkRecord]:
+    """최종 노출 링크와 동일한 chunk만 sources에 남긴다."""
+    first_chunk_by_url: dict[str, MainChunkRecord] = {}
+    for chunk in chunks:
+        if chunk.url and chunk.url not in first_chunk_by_url:
+            first_chunk_by_url[chunk.url] = chunk
+    return [first_chunk_by_url[link.url] for link in links if link.url in first_chunk_by_url]
+
+
+def filter_disclaimed_source_links(
+    links: list[_SourceLink],
+    descriptions: list[str],
+) -> tuple[list[_SourceLink], list[str]]:
+    kept_links: list[_SourceLink] = []
+    kept_descriptions: list[str] = []
+    for index, link in enumerate(links):
+        description = (
+            descriptions[index]
+            if index < len(descriptions) and descriptions[index]
+            else _default_link_description(link)
+        )
+        if _is_disclaimed_link_description(description):
+            continue
+        kept_links.append(link)
+        kept_descriptions.append(description)
+    return kept_links, kept_descriptions
+
+
+def filter_relevant_source_chunks(keyword: str, chunks: list[MainChunkRecord]) -> list[MainChunkRecord]:
+    """답변과 sources에 노출할 chunk를 질문 핵심어 기준으로 제한한다."""
+    groups = _extract_source_relevance_groups(keyword)
+    if not groups:
+        return chunks
+    return [chunk for chunk in chunks if _matches_source_relevance_groups(groups, chunk)]
+
+
+def _extract_source_relevance_groups(keyword: str) -> list[_SourceRelevanceGroup]:
+    raw_terms = re.findall(r"[0-9A-Za-z가-힣]+", (keyword or "").lower())
+    groups: list[_SourceRelevanceGroup] = []
+    for raw_term in raw_terms:
+        term = _strip_source_relevance_suffix(_strip_korean_particle(raw_term))
+        if len(term) < 2 or term.isdigit() or term in MAIN_SOURCE_RELEVANCE_STOP_TERMS:
+            continue
+        for part in _split_source_relevance_term(term):
+            if len(part) < 2 or part.isdigit() or part in MAIN_SOURCE_RELEVANCE_STOP_TERMS:
+                continue
+            aliases = _dedupe_terms(_expand_source_relevance_term(part))
+            aliases = [
+                alias
+                for alias in aliases
+                if len(alias) >= 2 and alias not in MAIN_SOURCE_RELEVANCE_STOP_TERMS
+            ]
+            if aliases:
+                groups.append(
+                    _SourceRelevanceGroup(
+                        aliases=tuple(aliases),
+                        token_only=_is_short_latin_term(part),
+                    )
+                )
+
+    deduped: list[_SourceRelevanceGroup] = []
+    seen: set[tuple[tuple[str, ...], bool]] = set()
+    for group in groups:
+        key = (group.aliases, group.token_only)
+        if key in seen:
+            continue
+        deduped.append(group)
+        seen.add(key)
+    return deduped
+
+
+def _split_source_relevance_term(term: str) -> list[str]:
+    match = re.fullmatch(r"([a-z0-9]{2,})([가-힣].*)", term)
+    if match:
+        return [match.group(1), match.group(2)]
+    return [term]
+
+
+def _strip_source_relevance_suffix(term: str) -> str:
+    for suffix in ("관련", "공지", "안내", "정보"):
+        if len(term) > len(suffix) + 1 and term.endswith(suffix):
+            return term[: -len(suffix)]
+    return term
+
+
+def _expand_source_relevance_term(term: str) -> list[str]:
+    expanded = [term]
+    if "전공" in term:
+        expanded.append("전공")
+    if "복수" in term:
+        expanded.append("복수")
+    if "부전공" in term:
+        expanded.append("부전공")
+    if "수강" in term:
+        expanded.append("수강")
+    if "휴복학" in term:
+        expanded.extend(["휴학", "복학"])
+    if "장학" in term:
+        expanded.append("장학")
+    if "프론티어" in term or "프런티어" in term:
+        expanded.extend(["프론티어", "프런티어", "frontier", "prontier"])
+    if "도서관" in term:
+        expanded.extend(["도서관", "학술정보관"])
+    if "학술정보관" in term:
+        expanded.extend(["학술정보관", "도서관"])
+    return expanded
+
+
+def _matches_source_relevance_groups(
+    groups: list[_SourceRelevanceGroup],
+    chunk: MainChunkRecord,
+) -> bool:
+    source_text = " ".join(
+        [
+            chunk.title or "",
+            chunk.text or "",
+            chunk.category or "",
+        ]
+    )
+    normalized_haystack = _normalize_source_text(source_text)
+    tokens = set(_source_match_tokens(source_text))
+    return all(
+        _matches_source_relevance_group(group, normalized_haystack, tokens)
+        for group in groups
+    )
+
+
+def _matches_source_relevance_group(
+    group: _SourceRelevanceGroup,
+    normalized_haystack: str,
+    tokens: set[str],
+) -> bool:
+    for alias in group.aliases:
+        normalized_alias = _normalize_source_text(alias)
+        if not normalized_alias:
+            continue
+        if group.token_only or _is_short_latin_term(alias):
+            if normalized_alias in tokens:
+                return True
+            continue
+        if normalized_alias in normalized_haystack:
+            return True
+    return False
+
+
+def _source_match_tokens(value: str) -> list[str]:
+    return [
+        _normalize_source_text(token)
+        for token in re.findall(r"[0-9A-Za-z가-힣]+", (value or "").lower())
+        if _normalize_source_text(token)
+    ]
+
+
+def _normalize_source_text(value: str) -> str:
+    return re.sub(r"[^0-9a-z가-힣]+", "", (value or "").lower())
+
+
+def _is_short_latin_term(term: str) -> bool:
+    return bool(re.fullmatch(r"[a-z0-9]{2,3}", (term or "").lower()))
+
+
+def _dedupe_terms(terms: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        if term in seen:
+            continue
+        deduped.append(term)
+        seen.add(term)
+    return deduped
+
+
+def _is_disclaimed_link_description(description: str) -> bool:
+    normalized = re.sub(r"\s+", " ", (description or "").lower())
+    compact = _normalize_source_text(description)
+    return any(term in normalized or _normalize_source_text(term) in compact for term in MAIN_LINK_DISCLAIMER_TERMS)
 
 
 def _decide_link_limit(chunks: list[MainChunkRecord]) -> int:

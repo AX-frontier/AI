@@ -629,7 +629,18 @@ def stream_orchestrator_chat(
     library_repository: LibraryRepository | None = None,
 ) -> Iterator[str]:
     """라우팅 결과를 먼저 전송하고 MAIN 에이전트는 LLM 응답을 청크 단위로 스트리밍한다."""
-    from agents.main_agent.generator import _build_link_description_prompt, select_source_links, _format_link_guide_answer, _default_link_description, build_main_fallback_response, MAIN_VECTOR_THRESHOLD
+    from agents.main_agent.generator import (
+        MAIN_VECTOR_THRESHOLD,
+        _build_link_description_prompt,
+        _default_link_description,
+        _fails_strict_match_filter,
+        _format_link_guide_answer,
+        build_main_fallback_response,
+        filter_disclaimed_source_links,
+        filter_relevant_source_chunks,
+        select_source_links,
+        source_chunks_for_links,
+    )
     from agents.main_agent.retrieval import MainRetriever
 
     resolved_message = _resolve_orchestrator_followup_message(
@@ -686,14 +697,34 @@ def stream_orchestrator_chat(
             yield _sse_event({'type': 'done', **response.model_dump()})
             return
 
-        links = select_source_links(result.chunks)
+        display_chunks = filter_relevant_source_chunks(result.keyword, result.chunks)
+        if not display_chunks:
+            fallback = build_main_fallback_response(
+                result.keyword,
+                "질문과 직접적으로 일치하는 공지 데이터를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
+                reason_code="TOPIC_MISMATCH_NO_DATA",
+            )
+            response = _maybe_convert_main_fallback_to_data_preparing(fallback)
+            yield _sse_event({'type': 'done', **response.model_dump()})
+            return
+
+        links = select_source_links(display_chunks)
+        if not links or _fails_strict_match_filter(result.keyword, links):
+            fallback = build_main_fallback_response(
+                result.keyword,
+                "질문과 직접적으로 일치하는 공식 링크를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
+                reason_code="TOPIC_MISMATCH_NO_DATA",
+            )
+            response = _maybe_convert_main_fallback_to_data_preparing(fallback)
+            yield _sse_event({'type': 'done', **response.model_dump()})
+            return
+
         prompt = _build_link_description_prompt(result.keyword, links)
 
         accumulated = ""
         try:
             for chunk in llm.generate_stream(prompt):
                 accumulated += chunk
-                yield _sse_event({'type': 'chunk', 'text': chunk})
         except Exception:
             accumulated = "\n".join(_default_link_description(l) for l in links)
 
@@ -701,11 +732,23 @@ def stream_orchestrator_chat(
         descriptions = _parse_link_descriptions(accumulated, len(links))
         if descriptions is None:
             descriptions = [_default_link_description(l) for l in links]
+        links, descriptions = filter_disclaimed_source_links(links, descriptions)
+        source_chunks = source_chunks_for_links(display_chunks, links)
+        if not links or not source_chunks:
+            fallback = build_main_fallback_response(
+                result.keyword,
+                "질문과 직접적으로 일치하는 공식 링크를 찾지 못했습니다. 관련 데이터가 준비 중일 수 있습니다.",
+                reason_code="TOPIC_MISMATCH_NO_DATA",
+            )
+            response = _maybe_convert_main_fallback_to_data_preparing(fallback)
+            yield _sse_event({'type': 'done', **response.model_dump()})
+            return
         final_answer = _format_link_guide_answer(result.keyword, links, descriptions)
+        yield _sse_event({'type': 'chunk', 'text': final_answer})
 
         from agents.main_agent.api.schemas import MainSource
-        sources = [MainSource(title=c.title, url=c.url, documentId=c.document_id, chunkId=c.chunk_id, category=c.category, postedDate=c.posted_date, score=round(c.score, 3)) for c in result.chunks]
-        yield _sse_event({'type': 'done', 'targetAgent': 'MAIN', 'intent': 'SCHOOL_NOTICE_QA', 'answer': final_answer, 'sources': [s.model_dump() for s in sources], 'confidence': round(max(0.5, min(0.95, result.chunks[0].score)), 3), 'fallbackUsed': False, 'fallbackReason': None, 'searchKeyword': result.keyword, 'resultCount': len(result.chunks), 'requiresDocumentInput': False})
+        sources = [MainSource(title=c.title, url=c.url, documentId=c.document_id, chunkId=c.chunk_id, category=c.category, postedDate=c.posted_date, score=round(c.score, 3)) for c in source_chunks]
+        yield _sse_event({'type': 'done', 'targetAgent': 'MAIN', 'intent': 'SCHOOL_NOTICE_QA', 'answer': final_answer, 'sources': [s.model_dump() for s in sources], 'confidence': round(max(0.5, min(0.95, source_chunks[0].score)), 3), 'fallbackUsed': False, 'fallbackReason': None, 'searchKeyword': result.keyword, 'resultCount': len(source_chunks), 'requiresDocumentInput': False})
         return
 
     if route_result.targetAgent == "LIBRARY":

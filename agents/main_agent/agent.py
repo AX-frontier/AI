@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agents.main_agent.api.schemas import MainChatRequest, MainChatResponse
 from agents.main_agent.embedding import EmbeddingProvider, get_embedding_provider
+from agents.main_agent.general_guidance import build_general_guide_response
 from agents.main_agent.generator import build_main_response
 from agents.main_agent.llm.base import LLMClient
 from agents.main_agent.llm.factory import get_llm_client
@@ -20,6 +21,10 @@ def run_main_agent(
     page_navigation_response = build_page_navigation_response(request.message)
     if page_navigation_response is not None:
         return page_navigation_response
+
+    general_guide_response = build_general_guide_response(request.message)
+    if general_guide_response is not None:
+        return general_guide_response
 
     repo = repository or get_main_chunk_repository()
     embedder = embedding_provider or get_embedding_provider()
