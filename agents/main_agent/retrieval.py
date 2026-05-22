@@ -40,6 +40,18 @@ def extract_main_search_keyword(message: str) -> str:
     cleanup_phrases = (
         "알려줘",
         "궁금해",
+        "궁금합니다",
+        "보고싶어",
+        "보고 싶어",
+        "보고싶은데",
+        "보고 싶은데",
+        "보고싶습니다",
+        "알고싶어",
+        "알고 싶어",
+        "알고싶은데",
+        "알고 싶은데",
+        "알고싶습니다",
+        "알고 싶습니다",
         "뭐야",
         "언제야",
         "어떻게",
@@ -49,6 +61,14 @@ def extract_main_search_keyword(message: str) -> str:
     )
     for phrase in cleanup_phrases:
         cleaned = cleaned.replace(phrase, " ")
+    cleaned = re.sub(
+        r"([0-9A-Za-z가-힣]+)에\s*(대해|대해서|관해|관해서)(?=\s|$)",
+        r"\1 ",
+        cleaned,
+    )
+    cleaned = re.sub(r"(대해|대해서|관해|관해서)(?=\s|$)", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,:;")
+    cleaned = _space_mixed_latin_korean_tokens(cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,:;")
     return cleaned or message.strip()
 
@@ -64,7 +84,11 @@ def rerank_chunks(keyword: str, chunks: list[MainChunkRecord]) -> list[MainChunk
 
 
 def _expand_terms(keyword: str) -> list[str]:
-    raw_terms = re.findall(r"[0-9A-Za-z가-힣]+", keyword.lower())
+    raw_terms = [
+        part
+        for term in re.findall(r"[0-9A-Za-z가-힣]+", keyword.lower())
+        for part in _split_mixed_latin_korean_token(term)
+    ]
     terms: list[str] = []
     for term in raw_terms:
         if len(term) >= 2:
@@ -79,6 +103,20 @@ def _expand_terms(keyword: str) -> list[str]:
             terms.extend(["운영", "시간", "개관"])
     seen: set[str] = set()
     return [term for term in terms if not (term in seen or seen.add(term))]
+
+
+def _space_mixed_latin_korean_tokens(value: str) -> str:
+    return " ".join(
+        " ".join(_split_mixed_latin_korean_token(term))
+        for term in value.split()
+    )
+
+
+def _split_mixed_latin_korean_token(term: str) -> list[str]:
+    match = re.fullmatch(r"([a-z0-9]{2,})([가-힣].*)", term.lower())
+    if match:
+        return [match.group(1), match.group(2)]
+    return [term]
 
 
 def _lexical_boost(keyword: str, terms: list[str], chunk: MainChunkRecord) -> float:

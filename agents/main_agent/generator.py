@@ -72,6 +72,14 @@ MAIN_SOURCE_RELEVANCE_STOP_TERMS = {
     "대상",
     "방법",
     "정보",
+    "대해",
+    "대해서",
+    "관해",
+    "관해서",
+    "알고",
+    "싶어",
+    "궁금해",
+    "궁금합니다",
     "보고싶어",
     "보고싶은데",
     "보고싶습니다",
@@ -323,19 +331,22 @@ def _extract_source_relevance_groups(keyword: str) -> list[_SourceRelevanceGroup
         term = _strip_source_relevance_suffix(_strip_korean_particle(raw_term))
         if len(term) < 2 or term.isdigit() or term in MAIN_SOURCE_RELEVANCE_STOP_TERMS:
             continue
-        aliases = _dedupe_terms(_expand_source_relevance_term(term))
-        aliases = [
-            alias
-            for alias in aliases
-            if len(alias) >= 2 and alias not in MAIN_SOURCE_RELEVANCE_STOP_TERMS
-        ]
-        if aliases:
-            groups.append(
-                _SourceRelevanceGroup(
-                    aliases=tuple(aliases),
-                    token_only=_is_short_latin_term(term),
+        for part in _split_source_relevance_term(term):
+            if len(part) < 2 or part.isdigit() or part in MAIN_SOURCE_RELEVANCE_STOP_TERMS:
+                continue
+            aliases = _dedupe_terms(_expand_source_relevance_term(part))
+            aliases = [
+                alias
+                for alias in aliases
+                if len(alias) >= 2 and alias not in MAIN_SOURCE_RELEVANCE_STOP_TERMS
+            ]
+            if aliases:
+                groups.append(
+                    _SourceRelevanceGroup(
+                        aliases=tuple(aliases),
+                        token_only=_is_short_latin_term(part),
+                    )
                 )
-            )
 
     deduped: list[_SourceRelevanceGroup] = []
     seen: set[tuple[tuple[str, ...], bool]] = set()
@@ -346,6 +357,13 @@ def _extract_source_relevance_groups(keyword: str) -> list[_SourceRelevanceGroup
         deduped.append(group)
         seen.add(key)
     return deduped
+
+
+def _split_source_relevance_term(term: str) -> list[str]:
+    match = re.fullmatch(r"([a-z0-9]{2,})([가-힣].*)", term)
+    if match:
+        return [match.group(1), match.group(2)]
+    return [term]
 
 
 def _strip_source_relevance_suffix(term: str) -> str:
