@@ -246,6 +246,259 @@ def test_main_agent_prompt_limits_reference_urls_to_top_three() -> None:
     assert response.sources[0].url == "https://example.edu/notice-1"
 
 
+def test_main_agent_filters_unrelated_links_from_answer_sources_and_prompt() -> None:
+    llm_client = RecordingLLMClient("복수전공 신청 기간과 절차를 확인할 수 있습니다.")
+    chunks = [
+        MainChunkRecord(
+            chunk_id="notice-major-0001",
+            document_id="notice-major",
+            text="복수전공 신청 기간과 변경 절차에 대한 학사 공지입니다.",
+            score=0.91,
+            metadata={
+                "title": "복수전공 신청 안내",
+                "category": "학사",
+                "url": "https://example.edu/major",
+            },
+        ),
+        MainChunkRecord(
+            chunk_id="notice-adobe-0001",
+            document_id="notice-adobe",
+            text="Adobe 공동구매 프로모션 안내입니다.",
+            score=0.89,
+            metadata={
+                "title": "Adobe 공동구매 특별 프로모션",
+                "category": "한성공지",
+                "url": "https://example.edu/adobe",
+            },
+        ),
+        MainChunkRecord(
+            chunk_id="notice-volunteer-0001",
+            document_id="notice-volunteer",
+            text="초록우산 대학생 봉사단 모집 안내입니다.",
+            score=0.88,
+            metadata={
+                "title": "초록우산 봉사단 모집",
+                "category": "한성공지",
+                "url": "https://example.edu/green-umbrella",
+            },
+        ),
+    ]
+
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_filter_links",
+            traceId="tr_filter_links",
+            conversationUid="conv_filter_links",
+            message="복수전공 신청 기간 알려줘",
+        ),
+        repository=MockChunkRepository(chunks),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=llm_client,
+    )
+
+    assert response.fallbackUsed is False
+    assert "복수전공 신청 안내" in response.answer
+    assert "https://example.edu/major" in response.answer
+    assert "Adobe 공동구매" not in response.answer
+    assert "https://example.edu/adobe" not in response.answer
+    assert "초록우산" not in response.answer
+    assert "https://example.edu/green-umbrella" not in response.answer
+    assert [source.url for source in response.sources] == ["https://example.edu/major"]
+    assert len(llm_client.prompts) == 1
+    prompt = llm_client.prompts[0]
+    assert "url: https://example.edu/major" in prompt
+    assert "https://example.edu/adobe" not in prompt
+    assert "https://example.edu/green-umbrella" not in prompt
+
+
+def test_main_agent_keeps_only_ax_frontier_link_for_frontier_query_alias() -> None:
+    llm_client = RecordingLLMClient("AX 프런티어 챌린지 진행 상황을 확인할 수 있습니다.")
+    chunks = [
+        MainChunkRecord(
+            chunk_id="notice-ax-frontier-0001",
+            document_id="notice-ax-frontier",
+            text="한성 AX 프런티어 챌린지 1단계 심사 통과 결과를 안내합니다.",
+            score=0.93,
+            metadata={
+                "title": "제1회 한성 AX 프런티어 챌린지 — 1단계 심사 통과 결과 발표",
+                "category": "한성공지",
+                "url": "https://www.hansung.ac.kr/bbs/hansung/2127/221952/artclView.do",
+            },
+        ),
+        MainChunkRecord(
+            chunk_id="notice-gown-0001",
+            document_id="notice-gown",
+            text="학위수여식 관련 학사복 대여 안내입니다.",
+            score=0.91,
+            metadata={
+                "title": "[총학생회] 2025학년도 전기 학위수여식 학사복 대여 안내",
+                "category": "한성공지",
+                "url": "https://www.hansung.ac.kr/bbs/hansung/2127/219632/artclView.do",
+            },
+        ),
+        MainChunkRecord(
+            chunk_id="notice-club-0001",
+            document_id="notice-club",
+            text="2025학년도 2학기 동아리활동 평가 결과 안내입니다.",
+            score=0.9,
+            metadata={
+                "title": "2025학년도 2학기 동아리활동 평가 결과 안내",
+                "category": "한성공지",
+                "url": "https://www.hansung.ac.kr/bbs/hansung/2127/219691/artclView.do",
+            },
+        ),
+    ]
+
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_ax_frontier",
+            traceId="tr_ax_frontier",
+            conversationUid="conv_ax_frontier",
+            message="ax 프론티어 보고싶어",
+        ),
+        repository=MockChunkRepository(chunks),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=llm_client,
+    )
+
+    assert response.fallbackUsed is False
+    assert "제1회 한성 AX 프런티어 챌린지" in response.answer
+    assert "https://www.hansung.ac.kr/bbs/hansung/2127/221952/artclView.do" in response.answer
+    assert "학사복 대여" not in response.answer
+    assert "동아리활동 평가" not in response.answer
+    assert [source.url for source in response.sources] == [
+        "https://www.hansung.ac.kr/bbs/hansung/2127/221952/artclView.do"
+    ]
+    assert len(llm_client.prompts) == 1
+    prompt = llm_client.prompts[0]
+    assert "url: https://www.hansung.ac.kr/bbs/hansung/2127/221952/artclView.do" in prompt
+    assert "https://www.hansung.ac.kr/bbs/hansung/2127/219632/artclView.do" not in prompt
+    assert "https://www.hansung.ac.kr/bbs/hansung/2127/219691/artclView.do" not in prompt
+
+
+def test_main_agent_does_not_match_ax_inside_longer_latin_token() -> None:
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_ax_fax",
+            traceId="tr_ax_fax",
+            conversationUid="conv_ax_fax",
+            message="ax 프론티어 보고싶어",
+        ),
+        repository=MockChunkRepository(
+            [
+                MainChunkRecord(
+                    chunk_id="notice-fax-frontier-0001",
+                    document_id="notice-fax-frontier",
+                    text="FAX 프런티어 서류 제출 방식 안내입니다.",
+                    score=0.93,
+                    metadata={
+                        "title": "FAX 프런티어 제출 안내",
+                        "category": "한성공지",
+                        "url": "https://example.edu/fax-frontier",
+                    },
+                )
+            ]
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=RecordingLLMClient("무관한 답변입니다."),
+    )
+
+    assert response.fallbackUsed is True
+    assert response.fallbackReasonCode == "TOPIC_MISMATCH_NO_DATA"
+    assert response.sources == []
+    assert "FAX 프런티어 제출 안내" not in response.answer
+    assert "https://example.edu/fax-frontier" not in response.answer
+
+
+def test_main_agent_removes_links_when_llm_description_says_unrelated() -> None:
+    llm_client = RecordingLLMClient(
+        "\n".join(
+            [
+                "1. AX 프런티어 챌린지 심사 결과를 확인할 수 있습니다.",
+                "2. AX 프런티어와 직접 관련은 없으나 학사 행사 준비에 필요한 정보를 제공합니다.",
+            ]
+        )
+    )
+    chunks = [
+        MainChunkRecord(
+            chunk_id="notice-ax-frontier-0001",
+            document_id="notice-ax-frontier",
+            text="한성 AX 프런티어 챌린지 1단계 심사 통과 결과를 안내합니다.",
+            score=0.93,
+            metadata={
+                "title": "제1회 한성 AX 프런티어 챌린지 — 1단계 심사 통과 결과 발표",
+                "category": "한성공지",
+                "url": "https://example.edu/ax-frontier",
+            },
+        ),
+        MainChunkRecord(
+            chunk_id="notice-ax-frontier-gown-0001",
+            document_id="notice-ax-frontier-gown",
+            text="AX 프런티어와 직접 관련은 없으나 학위수여식 학사복 대여 안내입니다.",
+            score=0.91,
+            metadata={
+                "title": "AX 프런티어 참고 학사복 대여 안내",
+                "category": "한성공지",
+                "url": "https://example.edu/gown",
+            },
+        ),
+    ]
+
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_ax_disclaimer",
+            traceId="tr_ax_disclaimer",
+            conversationUid="conv_ax_disclaimer",
+            message="ax 프론티어 보고싶어",
+        ),
+        repository=MockChunkRepository(chunks),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=llm_client,
+    )
+
+    assert response.fallbackUsed is False
+    assert "제1회 한성 AX 프런티어 챌린지" in response.answer
+    assert "https://example.edu/ax-frontier" in response.answer
+    assert "학사복 대여" not in response.answer
+    assert "직접 관련은 없으나" not in response.answer
+    assert "https://example.edu/gown" not in response.answer
+    assert [source.url for source in response.sources] == ["https://example.edu/ax-frontier"]
+
+
+def test_main_agent_falls_back_when_all_link_descriptions_are_unrelated() -> None:
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_ax_all_disclaimed",
+            traceId="tr_ax_all_disclaimed",
+            conversationUid="conv_ax_all_disclaimed",
+            message="ax 프론티어 보고싶어",
+        ),
+        repository=MockChunkRepository(
+            [
+                MainChunkRecord(
+                    chunk_id="notice-ax-frontier-gown-0001",
+                    document_id="notice-ax-frontier-gown",
+                    text="AX 프런티어와 직접 관련은 없으나 학위수여식 학사복 대여 안내입니다.",
+                    score=0.93,
+                    metadata={
+                        "title": "AX 프런티어 참고 학사복 대여 안내",
+                        "category": "한성공지",
+                        "url": "https://example.edu/gown",
+                    },
+                )
+            ]
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=RecordingLLMClient("AX 프런티어와 직접 관련은 없으나 학사 행사 준비에 필요한 정보를 제공합니다."),
+    )
+
+    assert response.fallbackUsed is True
+    assert response.fallbackReasonCode == "TOPIC_MISMATCH_NO_DATA"
+    assert response.sources == []
+    assert "학사복 대여" not in response.answer
+    assert "https://example.edu/gown" not in response.answer
+
+
 def test_main_agent_shows_single_link_when_boundary_is_clear_and_top1_is_high() -> None:
     llm_client = RecordingLLMClient("핵심 내용과 대상, 일정, 유의사항을 확인할 수 있습니다.")
     chunks = [
@@ -395,9 +648,12 @@ def test_main_agent_falls_back_when_ambiguous_boundary_results_are_not_scholarsh
 
     assert response.fallbackUsed is True
     assert response.answer.startswith("데이터 준비중입니다.")
-    assert "대신 참고하기 좋은 관련 공지를 먼저 추천드립니다." in response.answer
-    assert "1. 공지 A" in response.answer
-    assert "https://example.edu/notice-a" in response.answer
+    assert response.fallbackReasonCode == "TOPIC_MISMATCH_NO_DATA"
+    assert response.sources == []
+    assert "대신 참고하기 좋은 관련 공지를 먼저 추천드립니다." not in response.answer
+    assert "공지 A" not in response.answer
+    assert "https://example.edu/notice-a" not in response.answer
+    assert llm_client.prompts == []
 
 
 def test_main_agent_template_answer_omits_empty_urls_from_reference_list() -> None:
@@ -453,7 +709,10 @@ def test_main_agent_template_answer_omits_empty_urls_from_reference_list() -> No
     assert "2. 두 번째 URL 공지" in response.answer
     assert "https://example.edu/notice-url-2" in response.answer
     assert "URL 없는 공지와 관련된 한성대학교 공식 안내 링크입니다." not in response.answer
-    assert "URL 없는 공지" in response.sources[1].title
+    assert [source.url for source in response.sources] == [
+        "https://example.edu/notice-url-1",
+        "https://example.edu/notice-url-2",
+    ]
 
 
 @pytest.mark.parametrize(
