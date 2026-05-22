@@ -14,7 +14,7 @@ from agents.library.api.schemas import LibraryIntent
 CONFIG_PATH = Path(__file__).parent / "config" / "intents.yaml"
 AMBIGUOUS_MARGIN = 0.35
 LOW_CONFIDENCE_THRESHOLD = 0.55
-GENERIC_LIBRARY_TERMS = ("도서관", "학술정보관")
+GENERIC_LIBRARY_TERMS = ("도서관", "학술정보관", "학정관")
 LOCATION_HINTS = ("위치", "어디", "소장", "서가", "자료실", "층", "청구기호")
 BOOK_HINTS = ("검색", "찾아", "찾고", "도서", "책", "저자", "작가", "출판사", "관련")
 BOOK_GENERIC_TERMS = ("책", "도서")

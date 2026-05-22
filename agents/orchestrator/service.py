@@ -422,6 +422,23 @@ def _build_route_response(
     resolved: ResolvedRoute,
 ) -> OrchestratorRouteResponse:
     route_response = resolved.route
+    logger.info(
+        "orchestrator.route detail query_uid=%s trace_id=%s conversation_uid=%s message=%s target_agent=%s intent=%s confidence=%.3f mode=%s reason_code=%s reason=%s evidence_main=%s evidence_library=%s evidence_document=%s evidence_campus=%s",
+        request.queryUid,
+        request.traceId,
+        request.conversationUid,
+        _truncate_log_text(request.message),
+        route_response.targetAgent,
+        route_response.intent,
+        route_response.confidence,
+        resolved.routing_mode,
+        resolved.routing_reason_code,
+        _truncate_log_text(route_response.reason, max_length=700),
+        _truncate_log_text(route_response.evidence.mainReason),
+        _truncate_log_text(route_response.evidence.libraryReason),
+        _truncate_log_text(route_response.evidence.documentReviewReason),
+        _truncate_log_text(route_response.evidence.campusMapReason),
+    )
     return OrchestratorRouteResponse(
         queryUid=request.queryUid,
         traceId=request.traceId,
@@ -434,6 +451,13 @@ def _build_route_response(
         routingMode=resolved.routing_mode,
         routingReasonCode=resolved.routing_reason_code,
     )
+
+
+def _truncate_log_text(value: str | None, max_length: int = 240) -> str:
+    compact = " ".join((value or "").split())
+    if len(compact) <= max_length:
+        return compact
+    return compact[: max_length - 3].rstrip() + "..."
 
 
 def execute_routed_query(
