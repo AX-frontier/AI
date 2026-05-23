@@ -167,6 +167,24 @@ def test_main_agent_keeps_specific_scholarship_notice_queries_on_rag_path(messag
     assert response.sources[0].url == "https://example.edu/scholarship-notice"
     assert "https://example.edu/scholarship-notice" in response.answer
     assert "https://hansung.ac.kr/edubank/5762/subview.do" not in response.answer
+
+
+def test_main_agent_does_not_treat_library_hours_question_as_page_navigation() -> None:
+    repository = MockChunkRepository([])
+    response = run_main_agent(
+        MainChatRequest(
+            queryUid="q_page_002",
+            traceId="tr_page_002",
+            conversationUid="conv_page_002",
+            message="학정관 몇 시에 열어",
+        ),
+        repository=repository,
+        embedding_provider=DeterministicEmbeddingProvider(),
+        llm_client=MockLLMClient(),
+    )
+
+    assert response.fallbackUsed is True
+    assert response.sources == []
     assert repository.last_embedding is not None
 
 

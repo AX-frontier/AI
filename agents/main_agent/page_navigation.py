@@ -14,6 +14,28 @@ _NAVIGATION_TERMS = (
     "사이트",
     "접속",
 )
+_INFORMATION_QUESTION_TERMS = (
+    "몇시",
+    "몇 시",
+    "언제",
+    "운영시간",
+    "운영 시간",
+    "개관",
+    "휴관",
+    "몇시에",
+    "몇 시에",
+    "몇시까지",
+    "몇 시까지",
+    "알려줘",
+)
+_EXPLICIT_PAGE_TERMS = (
+    "페이지",
+    "사이트",
+    "링크",
+    "바로가기",
+    "이동",
+    "접속",
+)
 
 
 @dataclass(frozen=True)
@@ -42,6 +64,14 @@ PAGE_NAVIGATION_TARGETS: tuple[PageNavigationTarget, ...] = (
 def resolve_page_navigation_target(message: str) -> PageNavigationTarget | None:
     normalized = _compact(message)
     if not any(_compact(term) in normalized for term in _NAVIGATION_TERMS):
+        return None
+    if any(_compact(term) in normalized for term in _INFORMATION_QUESTION_TERMS):
+        return None
+    if not (
+        any(_compact(term) in normalized for term in _EXPLICIT_PAGE_TERMS)
+        or normalized.endswith("열어")
+        or normalized.endswith("열어줘")
+    ):
         return None
     for target in PAGE_NAVIGATION_TARGETS:
         if any(_compact(alias) in normalized for alias in target.aliases):
